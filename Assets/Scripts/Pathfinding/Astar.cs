@@ -1,16 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
 using Imported.StandardAssets.Vehicles.Car.Scripts;
 using Scripts.Game;
 using Scripts.Map;
-using Unity.Burst.Intrinsics;
-using Unity.Mathematics;
-using Unity.VisualScripting;
 using UnityEngine;
 using Quaternion = UnityEngine.Quaternion;
-using Random = UnityEngine.Random;
 using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
 
@@ -19,8 +14,8 @@ namespace Pathfinding
 {
     public class Astar
     {
-        private List<Vector3> astarExploredNodes = new List<Vector3>();
-        private List<Vector3> astarPath = new List<Vector3>();
+        private readonly List<Vector3> _astarExploredNodes = new();
+        private List<Vector3> _astarPath = new();
         
         /// <summary>
         /// Run the A* algorithm. 
@@ -28,20 +23,20 @@ namespace Pathfinding
         /// <param name="start">Start position. </param>
         /// <param name="goal">Goal position. </param>
         /// <returns>The planned path. </returns>
-        private List<Vector3> PlanPathAStar(Vector3 start, Vector3 goal)
+        public List<Vector3> PlanPathAStar(Vector3 start, Vector3 goal)
         {
-            float gridSize = 2.0f;
-            float carRadius = 0.9f;
+            const float gridSize = 2.0f;
+            const float carRadius = 0.9f;
             
             start = RoundToGrid(start, gridSize);
             goal = RoundToGrid(goal, gridSize);
             
-            List<AStarNode> openSet = new List<AStarNode>();
-            HashSet<Vector3> closedSet = new HashSet<Vector3>();
+            List<AStarNode> openSet = new();
+            HashSet<Vector3> closedSet = new();
             
             AStarNode startNode = new AStarNode(start);
-            startNode.gCost = 0;
-            startNode.hCost = Vector3.Distance(start, goal);
+            startNode.GCost = 0;
+            startNode.HCost = Vector3.Distance(start, goal);
             openSet.Add(startNode);
             
             int maxIterations = 50000;
@@ -51,21 +46,21 @@ namespace Pathfinding
             {
                 iter++;
                 
-                AStarNode currentNode = openSet.OrderBy(n => n.fCost).First();
+                AStarNode currentNode = openSet.OrderBy(n => n.FCost).First();
                 openSet.Remove(currentNode);
-                closedSet.Add(currentNode.position);
+                closedSet.Add(currentNode.Position);
                 
-                astarExploredNodes.Add(currentNode.position);
+                _astarExploredNodes.Add(currentNode.Position);
                 
-                if (Vector3.Distance(currentNode.position, goal) < gridSize * 1.5f)
+                if (Vector3.Distance(currentNode.Position, goal) < gridSize * 1.5f)
                 {
                     Debug.Log($"A* found path in {iter} iterations");
                     List<Vector3> path = ReconstructPath(currentNode);
-                    astarPath = path;  // Store for visualization
+                    _astarPath = path;  // Store for visualization
                     return path;
                 }
                 
-                foreach (Vector3 neighborPos in GetNeighbors(currentNode.position, gridSize))
+                foreach (Vector3 neighborPos in GetNeighbors(currentNode.Position, gridSize))
                 {
                     if (closedSet.Contains(neighborPos))
                         continue;
@@ -73,27 +68,27 @@ namespace Pathfinding
                     if (!IsTraversableAStar(neighborPos, carRadius))
                         continue;
                     
-                    float tentativeGCost = currentNode.gCost + Vector3.Distance(currentNode.position, neighborPos);
+                    float tentativeGCost = currentNode.GCost + Vector3.Distance(currentNode.Position, neighborPos);
                     
-                    AStarNode neighborNode = openSet.FirstOrDefault(n => n.position == neighborPos);
+                    AStarNode neighborNode = openSet.FirstOrDefault(n => n.Position == neighborPos);
                     
                     if (neighborNode == null)
                     {
                         neighborNode = new AStarNode(neighborPos);
-                        neighborNode.gCost = tentativeGCost;
-                        neighborNode.hCost = Vector3.Distance(neighborPos, goal);
-                        neighborNode.parent = currentNode;
+                        neighborNode.GCost = tentativeGCost;
+                        neighborNode.HCost = Vector3.Distance(neighborPos, goal);
+                        neighborNode.Parent = currentNode;
                         openSet.Add(neighborNode);
                     }
-                    else if (tentativeGCost < neighborNode.gCost)
+                    else if (tentativeGCost < neighborNode.GCost)
                     {
-                        neighborNode.gCost = tentativeGCost;
-                        neighborNode.parent = currentNode;
+                        neighborNode.GCost = tentativeGCost;
+                        neighborNode.Parent = currentNode;
                     }
                 }
             }
             
-            Debug.LogError($"A* failed after {iter} iterations. Explored {astarExploredNodes.Count} nodes, OpenSet empty: {openSet.Count == 0}");
+            Debug.LogError($"A* failed after {iter} iterations. Explored {_astarExploredNodes.Count} nodes, OpenSet empty: {openSet.Count == 0}");
             return new List<Vector3> { start, goal };
         }
         
@@ -104,10 +99,10 @@ namespace Pathfinding
         /// </summary>
         private class AStarNode
         {
-            public float gCost;
-            public float hCost;
-            public AStarNode parent;
-            public Vector3 position;
+            public float GCost;
+            public float HCost;
+            public AStarNode Parent;
+            public Vector3 Position;
 
             /// <summary>
             /// Initializes a new AStarNode with the given position. gCost and hCost are set to infinity by default, and parent is null.
@@ -115,10 +110,10 @@ namespace Pathfinding
             /// <param name="pos">The position of the node. </param>
             public AStarNode(Vector3 pos)
             {
-                position = pos;
+                Position = pos;
             }
 
-            public float fCost => gCost + hCost;
+            public float FCost => GCost + HCost;
         }
         
         
@@ -128,7 +123,7 @@ namespace Pathfinding
         /// <param name="pos">The position we want to round. </param>
         /// <param name="gridSize">The grid size. </param>
         /// <returns>The rounded position. </returns>
-        private Vector3 RoundToGrid(Vector3 pos, float gridSize)
+        private static Vector3 RoundToGrid(Vector3 pos, float gridSize)
         {
             return new Vector3(
                 Mathf.Round(pos.x / gridSize) * gridSize,
@@ -143,15 +138,15 @@ namespace Pathfinding
         /// </summary>
         /// <param name="endNode">The end node. </param>
         /// <returns>The path to the end node. </returns>
-        private List<Vector3> ReconstructPath(AStarNode endNode)
+        private static List<Vector3> ReconstructPath(AStarNode endNode)
         {
             List<Vector3> path = new List<Vector3>();
             AStarNode current = endNode;
         
             while (current != null)
             {
-                path.Add(current.position);
-                current = current.parent;
+                path.Add(current.Position);
+                current = current.Parent;
             }
         
             path.Reverse();
@@ -165,7 +160,7 @@ namespace Pathfinding
         /// <param name="pos">The node position we base the neighbors on. </param>
         /// <param name="gridSize">The grid size. </param>
         /// <returns>List of the neighbor positions. </returns>
-        private List<Vector3> GetNeighbors(Vector3 pos, float gridSize)
+        private static List<Vector3> GetNeighbors(Vector3 pos, float gridSize)
         {
             List<Vector3> neighbors = new List<Vector3>();
     
@@ -194,7 +189,7 @@ namespace Pathfinding
         /// <param name="position">The position we want to check. </param>
         /// <param name="radius">Radius of the vehicle. </param>
         /// <returns>True if the position is traversable and false otherwise. </returns>
-        private bool IsTraversableAStar(Vector3 position, float radius)
+        private static bool IsTraversableAStar(Vector3 position, float radius)
         {
             int obstacleLayer = LayerMask.GetMask("Obstacle");
     
@@ -1532,3 +1527,4 @@ public class AStarNode
 
     public float fCost => gCost + hCost;
 }
+*/
