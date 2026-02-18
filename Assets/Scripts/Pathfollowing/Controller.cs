@@ -127,9 +127,9 @@ namespace Pathfollowing
                 this.footbrake = 0f;
             }
             
-            Debug.Log("Target Speed: " + targetSpeed);
-            Debug.Log("Current Speed: " + currentSpeed);
-            Debug.Log("Diff: " + (currentSpeed - targetSpeed));
+            //Debug.Log("Target Speed: " + targetSpeed);
+            //Debug.Log("Current Speed: " + currentSpeed);
+            //Debug.Log("Diff: " + (currentSpeed - targetSpeed));
             
             this.lastSpeedError = error;
         }

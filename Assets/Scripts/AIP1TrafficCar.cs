@@ -26,6 +26,86 @@ public class AIP1TrafficCar : Agent
 
     private Transform _initialCarState;
     private Controller _controller;
+    private List<Node> _waypoints;
+    
+    
+    private void OnDrawGizmos()
+    {
+
+         // if (this.hybridAStar == null || this.hybridAStar.exploredNodes == null)
+         //    return;
+
+        // Hybrid A* search debug
+        // foreach (var node in this.hybridAStar.exploredNodes)
+        // {
+        //     Gizmos.color = Color.red;
+        //     Gizmos.DrawSphere(new Vector3(node.continuousState.x, 0.5f, node.continuousState.y), 0.3f);
+        //
+        //     // Draw heading arrow
+        //     float arrowLen = 1f;
+        //     Vector3 start = new Vector3(node.continuousState.x, 0.5f, node.continuousState.y);
+        //     Vector3 end = start + new Vector3(
+        //         Mathf.Cos(node.continuousState.z) * arrowLen,
+        //         0,
+        //         Mathf.Sin(node.continuousState.z) * arrowLen
+        //     );
+        //     Gizmos.DrawLine(start, end);
+        // }
+
+
+        if (_waypoints != null && _waypoints.Count > 0)
+        {
+            Gizmos.color = Color.green;
+            for (int i = 0; i < _waypoints.Count - 1; i++)
+            {
+                Vector3 start = new Vector3(_waypoints[i].position.x, 1f, _waypoints[i].position.y);
+                Vector3 end = new Vector3(_waypoints[i + 1].position.x, 1f, _waypoints[i + 1].position.y);
+                Gizmos.DrawLine(start, end);
+                Gizmos.DrawSphere(start, 0.5f);
+            }
+            // Draw last waypoint
+            Vector3 lastPos = new Vector3(_waypoints[_waypoints.Count - 1].position.x, 1f, _waypoints[_waypoints.Count - 1].position.y);
+            Gizmos.DrawSphere(lastPos, 0.5f);
+        }
+
+        if (_controller != null)
+        {
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawSphere(
+                new Vector3(_controller.closestPoint.x, _initialCarState.position.y,
+                    _controller.closestPoint.y), 0.5f);
+            Gizmos.color = Color.blue;
+            Gizmos.DrawSphere(
+                new Vector3(_controller.targetPoint.x, _initialCarState.position.y,
+                    _controller.targetPoint.y), 0.5f);
+        }
+
+
+
+        //bool showDistMap = true;
+        //if (this.smoother != null && showDistMap)
+        //{
+        //    for (int i = 0; i < CGSmoother.DISTANCE_MAP_RESOLUTION; i+=2)
+        //    {
+        //        for (int j = 0; j < CGSmoother.DISTANCE_MAP_RESOLUTION; j+=2)
+        //        {
+        //            Vector2 obsPos = this.smoother.distMap[i][j];
+        //            float xPos = this.smoother.distStart.x + i * this.smoother.stepX;
+        //            float zPos = this.smoother.distStart.z + j * this.smoother.stepZ;
+        //            float dist = Vector2.Distance(obsPos, new Vector2(xPos, zPos));
+        //            if (dist < CGSmoother.D_MAX)
+        //            {
+        //                Gizmos.color = Color.red;
+        //            }
+        //            else
+        //            {
+        //                Gizmos.color = Color.green;
+        //            }
+        //            Gizmos.DrawSphere(new Vector3(xPos, this.initialCarState.position.y + 5, zPos), 0.3f);
+        //        }
+        //    }
+        //}
+    }
     
     
     public override void Initialize()
@@ -53,14 +133,12 @@ public class AIP1TrafficCar : Agent
         // You can also fetch other types of objects using tags, assuming the objects you are looking for have tags assigned :).
 
         // Feel free to refer to any examples from previous assignments.
-        
-        List<Node> nodes;
+
+        Vector3 startPos = _initialCarState.position;
+        Vector3 goalPos = targetObjects[0].transform.position;
         
         Astar astar = new();
-        List<Vector3> astarPath = astar.PlanPathAStar(
-            MapManager.GetGlobalStartPosition(),
-            MapManager.GetGlobalGoalPosition()
-        );
+        List<Vector3> astarPath = astar.PlanPathAStar(startPos, goalPos);
         
         if (astarPath.Count < 2)
         {
@@ -71,7 +149,7 @@ public class AIP1TrafficCar : Agent
         Debug.Log($"A* found path with {astarPath.Count} waypoints");
         
         // Convert Vector3 path to Node list
-        nodes = new List<Node>();
+        List<Node> nodes = new();
         foreach (Vector3 pos in astarPath)
         {
             nodes.Add(new Node(pos.x, pos.z));
@@ -80,6 +158,8 @@ public class AIP1TrafficCar : Agent
         // Smoothes the waypoints
         CGSmoother smoother = new CGSmoother(_initialCarState.position.y, groundCollider);
         nodes = smoother.GetSmoothedPath(nodes);
+
+        _waypoints = nodes;
         
         // Creates the PD Controller
         _controller = new Controller(nodes, MapManager.GetGlobalGoalPosition(), initialCarState);
@@ -104,6 +184,15 @@ public class AIP1TrafficCar : Agent
         (steering, acceleration) = ControlsTowardsPoint(goal_pos);
 
         car.Move(steering, acceleration, acceleration, 0f);*/
+        
+        // Gets current car state
+        Transform carTransform = gameObject.transform.Find("Colliders/ColliderBody").transform;
+        
+        // Calculates the move
+        _controller.PDCalculateMove(carTransform);
+
+        // Executes the move
+        car.Move(_controller.steering, _controller.acceleration, _controller.footbrake, _controller.handbrake);
     }
 
     private (float steering, float acceleration) ControlsTowardsPoint(Vector3 avg_pos)
