@@ -6,6 +6,8 @@ using Scripts.Game;
 using UnityEngine;
 using Pathfinding;
 using Pathfollowing;
+using System.Diagnostics;
+using Debug = UnityEngine.Debug;
 
 [RequireComponent(typeof(CarController))]
 public class AIP1TrafficCar : Agent
@@ -110,6 +112,12 @@ public class AIP1TrafficCar : Agent
     
     public override void Initialize()
     {
+        var swTotal = new Stopwatch();
+        var swLocal = new Stopwatch();
+        
+        swTotal.Start();
+        swLocal.Start();
+        
         var gameManagerA2 = FindFirstObjectByType<GameManagerA2>();
         
         _mCurrentGoals = gameManagerA2.GetGoals(gameObject); // This car's goals. Can be multiple per vehicle!
@@ -137,8 +145,13 @@ public class AIP1TrafficCar : Agent
         Vector3 startPos = _initialCarState.position;
         Vector3 goalPos = targetObjects[0].transform.position;
         
+        swLocal.Stop();
+        Debug.Log($"Before anything: {swLocal.ElapsedMilliseconds} ms");
+        
+        swLocal.Restart();
         Astar astar = new();
         List<Vector3> astarPath = astar.PlanPathAStar(startPos, goalPos);
+        
         
         if (astarPath.Count < 2)
         {
@@ -148,13 +161,17 @@ public class AIP1TrafficCar : Agent
         
         Debug.Log($"A* found path with {astarPath.Count} waypoints");
         
+        
         // Convert Vector3 path to Node list
         List<Node> nodes = new();
         foreach (Vector3 pos in astarPath)
         {
             nodes.Add(new Node(pos.x, pos.z));
         }
+        swLocal.Stop();
+        Debug.Log($"A* planning time: {swLocal.ElapsedMilliseconds} ms");
         
+        swLocal.Restart();
         // Smoothes the waypoints
         CGSmoother smoother = new CGSmoother(_initialCarState.position.y, groundCollider);
         nodes = smoother.GetSmoothedPath(nodes);
@@ -163,6 +180,8 @@ public class AIP1TrafficCar : Agent
         
         // Creates the PD Controller
         _controller = new Controller(nodes, MapManager.GetGlobalGoalPosition(), initialCarState);
+        swLocal.Stop();
+        Debug.Log($"Smoothing and controller setup time: {swLocal.ElapsedMilliseconds} ms");
 
     }
 

@@ -10,16 +10,23 @@ namespace Pathfinding
 {
     public class CGSmoother
     {
-        private const float ALPHA = 0.00005f;
-        public const float D_MAX = 2.4f;
-        private const float W_COLLISION = 10000f;
+        //private const float ALPHA = 0.00005f;
+        private const float ALPHA = 0.005f; //Changed from 0.00005f for faster runtime
+        public const float D_MAX = 4.0f; // Was 2.4f
+        //private const float W_COLLISION = 10000f;
+        private const float W_COLLISION = 200f; //Changed to 200 for new mechanics, original is 10000
 
 
-        private const float W_CURVATURE = 5f;
-        private const float W_SMOOTHNESS = 1f;
-        public const int DISTANCE_MAP_RESOLUTION = 800;
-        private const int MAX_OUTER_ITER = 5;
-        private const int MAX_INNER_ITER = 50000;
+        //private const float W_CURVATURE = 5f;
+        private const float W_CURVATURE = 0.5f; //Changed to 0.5 for new mechanics, original is 5
+        //private const float W_SMOOTHNESS = 1f;
+        private const float W_SMOOTHNESS = 10f; //Changed to 10 for new mechanics, original is 1
+        //public const int DISTANCE_MAP_RESOLUTION = 800;
+        public const int DISTANCE_MAP_RESOLUTION = 150; //Changed to 150 for faster runtime
+        //private const int MAX_OUTER_ITER = 5;
+        private const int MAX_OUTER_ITER = 1; //Changed to 1 for faster runtime
+        //private const int MAX_INNER_ITER = 50000;
+        private const int MAX_INNER_ITER = 1000; //Changed to 1000 for faster runtime
         private const float MAX_GRADIENT = 100f;
     
     public CGSmoother(float carHeight, Collider map)
@@ -58,7 +65,7 @@ namespace Pathfinding
                 }
             }
 
-            Debug.Log("Distance Map Done, Resolution = " + DISTANCE_MAP_RESOLUTION);
+            //Debug.Log("Distance Map Done, Resolution = " + DISTANCE_MAP_RESOLUTION);
         }
 
         private Vector2 GetClosestObject(Vector3 pos, int obstacles)
@@ -157,7 +164,8 @@ namespace Pathfinding
             List<float> targetSpeed;
             while (maxIter > iter)
             {
-                path = GetResampledPath(path, 2);
+                int spacing = 5; // Changed to 5 for faster runtime, original was 2
+                path = GetResampledPath(path, spacing);
                 targetSpeed = Controller.GenerateTargetSpeeds(path);
                 path = RunGradientDescent(path, targetSpeed);
                 iter++;
@@ -197,14 +205,14 @@ namespace Pathfinding
                 
                 if (i % 1000 == 0)
                 {
-                    Debug.Log("Iteration " + i);
-                    Debug.Log("Magnitude " + totalGradientMagnitude);
+                    //Debug.Log("Iteration " + i);
+                    //Debug.Log("Magnitude " + totalGradientMagnitude);
                 }
 
                 if (totalGradientMagnitude < convergenceThreshold)
                 {
-                    Debug.Log("Convergence");
-                    Debug.Log("Iterations: " + i);
+                    //Debug.Log("Convergence");
+                    //Debug.Log("Iterations: " + i);
                     return path;
                 }
             }
@@ -238,7 +246,8 @@ namespace Pathfinding
             // Much simpler, also no singularity so more stable :)
             Vector2 laplace = x0 - 2 * x1 + x2;
             Vector2 dir = laplace.normalized;
-            float adjustment = ((float)Math.Pow(laplace.magnitude*5, 5) + 4f * laplace.magnitude);
+            //float adjustment = ((float)Math.Pow(laplace.magnitude*5, 5) + 4f * laplace.magnitude);
+            float adjustment = laplace.magnitude; // Changed to linear for faster runtime, original is above
             
             // Adjust curvature weight based on target speed, dont need curvature if we are slow
             float wCurvature = W_CURVATURE-2.5f + Mathf.Sqrt(targetSpeed)/2;
