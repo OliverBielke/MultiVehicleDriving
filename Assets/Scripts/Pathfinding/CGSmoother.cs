@@ -28,6 +28,8 @@ namespace Pathfinding
         //private const int MAX_INNER_ITER = 50000;
         private const int MAX_INNER_ITER = 1000; //Changed to 1000 for faster runtime
         private const float MAX_GRADIENT = 100f;
+        
+        private const float RIGHT_DRIVE = 1.0f; //Pushes path to right side
     
     public CGSmoother(float carHeight, Collider map)
         {
@@ -227,7 +229,9 @@ namespace Pathfinding
             Vector2 x0 = path[index - 1].position;
             Vector2 x1 = path[index].position;
             Vector2 x2 = path[index + 1].position;
-
+            
+            Vector2 forwardDir = (x2 - x0).normalized;
+            Vector2 rightDir = new Vector2(forwardDir.y, -forwardDir.x); //Forward is (x,y), so right is (y, -x)
 
             Vector2[] gradients = new Vector2[3];
 
@@ -253,8 +257,10 @@ namespace Pathfinding
             float wCurvature = W_CURVATURE-2.5f + Mathf.Sqrt(targetSpeed)/2;
             
             gradients[1] += wCurvature * -4 * dir * adjustment;
+            gradients[1] += RIGHT_DRIVE * -rightDir;
             gradients[0] += wCurvature * 2 * dir* adjustment;
             gradients[2] += wCurvature * 2 * dir* adjustment;
+            
 
 
             // Smoothness (simple derivation, sign flipped due to negative x1)

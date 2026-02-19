@@ -18,6 +18,9 @@ namespace Pathfollowing
         public const float CURV_CONST = 1f;
         public const float G = 9.81f;
 
+        public bool isReversing = false;
+        public float reverseTimer = 0f;
+
         public Controller(List<Node> waypoints, Vector3 goal, Transform carState)
         {
             this.steering = 0f;
@@ -59,6 +62,30 @@ namespace Pathfollowing
             CalculateAcceleration();
             this.prevCarPos = carTransform.position;
         }
+        
+        public void PerformReverse(Transform carTransform)
+        {
+            reverseTimer -= Time.fixedDeltaTime;
+
+            if (reverseTimer <= 0)
+            {
+                isReversing = false; // reversing has finished
+                return;
+            }
+
+            Vector3 targetPosition = new Vector3(this.targetPoint.x, carTransform.position.y, this.targetPoint.y);
+            Vector3 dirToTarget = (targetPosition - carTransform.position).normalized;
+
+            // Calculate angle to target, positive = target is to the right
+            float angleToTarget = Vector3.SignedAngle(carTransform.forward, dirToTarget, Vector3.up);
+
+            // Invert steering
+            this.steering = angleToTarget > 0 ? -1f : 1f;
+            
+            this.acceleration = 0f; 
+            this.footbrake = -1f;
+            this.handbrake = 0f;
+        }
 
         private void StanleyCalculateSteer()
         {
@@ -91,6 +118,14 @@ namespace Pathfollowing
         public void PDCalculateMove(Transform carTransform)
         {
             this.currCarState = carTransform;
+            
+            if (isReversing) //if we should reverse instead
+            {
+                PerformReverse(carTransform);
+                this.prevCarPos = carTransform.position;
+                this.prevCarState = carTransform;
+                return;
+            }
             // Effectively two seperate PD Controllers
             UpdateTargetDistance();
             PDCalculateSteer();

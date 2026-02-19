@@ -30,6 +30,14 @@ public class AIP1TrafficCar : Agent
     private Controller _controller;
     private List<Node> _waypoints;
     
+    // For reversal:
+    private float stuckTimer = 0f;
+    private bool isReversing = false;
+    private float reverseTimer = 0f;
+    private float stuckThreshold = 1.5f; // Seconds of stillness before reversing
+    private float reverseDuration = 2.0f; // How long to reverse
+    private Vector3 _lastPosition; // Used to check if we are actually stuck
+    
     
     private void OnDrawGizmos()
     {
@@ -178,6 +186,8 @@ public class AIP1TrafficCar : Agent
 
         _waypoints = nodes;
         
+        _lastPosition = transform.position; //For reversal
+        
         // Creates the PD Controller
         _controller = new Controller(nodes, MapManager.GetGlobalGoalPosition(), initialCarState);
         swLocal.Stop();
@@ -204,15 +214,49 @@ public class AIP1TrafficCar : Agent
 
         car.Move(steering, acceleration, acceleration, 0f);*/
         
+        float currentSpeed = (transform.position - _lastPosition).magnitude / Time.fixedDeltaTime;
+        _lastPosition = transform.position;
+
+        // if we are moving slow AND not already reversing
+        if (currentSpeed < 0.5f && !_controller.isReversing) 
+        {
+            stuckTimer += Time.fixedDeltaTime;
+            if (stuckTimer > stuckThreshold)
+            {
+                // initiate reverse then
+                _controller.isReversing = true;
+                _controller.reverseTimer = reverseDuration;
+                stuckTimer = 0f;
+            }
+        }
+        else if (currentSpeed >= 0.5f)
+        {
+            stuckTimer = 0f; // reset if we are moving normally
+        }
+        
         // Gets current car state
         Transform carTransform = gameObject.transform.Find("Colliders/ColliderBody").transform;
         
         // Calculates the move
         _controller.PDCalculateMove(carTransform);
-
-        // Executes the move
-        car.Move(_controller.steering, _controller.acceleration, _controller.footbrake, _controller.handbrake);
-    }
+        
+        float finalSteering = _controller.steering;
+        float finalAccel = _controller.acceleration;
+        float finalBrake = _controller.footbrake;
+        
+        if (!_controller.isReversing)
+        {
+            float panicRadius = 10.0f;
+            var (avoidSteer, avoidBrake) = LocalAvoidance.CalculateSeparation(carTransform, _mOtherCars, panicRadius);
+            
+            finalSteering = Mathf.Clamp(_controller.steering + avoidSteer, -1f, 1f);
+            
+            finalAccel = avoidBrake > 0.1f ? 0f : _controller.acceleration;
+            
+            finalBrake = avoidBrake > 0.1f ? -1f : _controller.footbrake; 
+        }
+        
+        car.Move(finalSteering, finalAccel, finalBrake, _controller.handbrake);    }
 
     private (float steering, float acceleration) ControlsTowardsPoint(Vector3 avg_pos)
     {
