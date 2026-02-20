@@ -10,7 +10,6 @@ namespace Pathfinding
     public class Astar
     {
         private readonly List<Vector3> _astarExploredNodes = new();
-        private List<Vector3> _astarPath = new();
         
         
         /// <summary>
@@ -50,7 +49,6 @@ namespace Pathfinding
                 {
                     Debug.Log($"A* found path in {iter} iterations");
                     List<Vector3> path = ReconstructPath(currentNode);
-                    _astarPath = path;  // Store for visualization
                     return path;
                 }
                 
@@ -88,7 +86,7 @@ namespace Pathfinding
         private class AStarNode
         {
             public float GCost;
-            public readonly float HCost;
+            private readonly float _hCost;
             public AStarNode Parent;
             public readonly Vector3 Position;
 
@@ -103,9 +101,14 @@ namespace Pathfinding
 
                 GCost = CostToCome(parent: parent);
 
-                HCost = Heuristic(goal:goal);
+                _hCost = Heuristic(goal:goal);
             }
             
+            /// <summary>
+            /// Heuristic cost to go for the vehicle. 
+            /// </summary>
+            /// <param name="goal">The goal posiiton. </param>
+            /// <returns>The estimated cost to go. </returns>
             private float Heuristic(Vector3 goal)
             {
                 return Vector3.Distance(Position, goal);
@@ -126,6 +129,7 @@ namespace Pathfinding
                 
                 return cost;
             }
+            
 
             /// <summary>
             /// Switches the parent of this node to a new parent and updates the gCost accordingly. This is used when we find a better path to an existing node in the open set.
@@ -138,7 +142,7 @@ namespace Pathfinding
             }
             
             
-            public float FCost => GCost + HCost;
+            public float FCost => GCost + _hCost;
         }
         
         
@@ -165,8 +169,8 @@ namespace Pathfinding
         /// <returns>The path to the end node. </returns>
         private static List<Vector3> ReconstructPath(AStarNode endNode)
         {
-            List<Vector3> path = new List<Vector3>();
-            AStarNode current = endNode;
+            List<Vector3> path = new();
+            var current = endNode;
         
             while (current != null)
             {
@@ -187,15 +191,15 @@ namespace Pathfinding
         /// <returns>List of the neighbor positions. </returns>
         private static List<Vector3> GetNeighbors(Vector3 pos, float gridSize)
         {
-            List<Vector3> neighbors = new List<Vector3>();
+            List<Vector3> neighbors = new();
     
-            for (int dx = -1; dx <= 1; dx++)
+            for (var dx = -1; dx <= 1; dx++)
             {
-                for (int dz = -1; dz <= 1; dz++)
+                for (var dz = -1; dz <= 1; dz++)
                 {
                     if (dx == 0 && dz == 0) continue;
             
-                    Vector3 neighbor = new Vector3(
+                    var neighbor = new Vector3(
                         pos.x + dx * gridSize,
                         pos.y,
                         pos.z + dz * gridSize
@@ -216,10 +220,10 @@ namespace Pathfinding
         /// <returns>True if the position is traversable and false otherwise. </returns>
         private static bool IsTraversableAStar(Vector3 position, float radius)
         {
-            int obstacleLayer = LayerMask.GetMask("Obstacle");
+            var obstacleLayer = LayerMask.GetMask("Obstacle");
     
             // Check a box at this position with the given radius
-            bool isBlocked = Physics.CheckBox(
+            var isBlocked = Physics.CheckBox(
                 position,
                 new Vector3(radius, 0.5f, radius), 
                 Quaternion.identity,
