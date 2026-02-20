@@ -1,12 +1,7 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using Imported.StandardAssets.Vehicles.Car.Scripts;
-using Scripts.Game;
-using Scripts.Map;
 using UnityEngine;
 using Quaternion = UnityEngine.Quaternion;
-using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
 
 
@@ -16,6 +11,7 @@ namespace Pathfinding
     {
         private readonly List<Vector3> _astarExploredNodes = new();
         private List<Vector3> _astarPath = new();
+        
         
         /// <summary>
         /// Run the A* algorithm. 
@@ -33,10 +29,8 @@ namespace Pathfinding
             
             List<AStarNode> openSet = new();
             HashSet<Vector3> closedSet = new();
-            
-            AStarNode startNode = new AStarNode(start);
-            startNode.GCost = 0;
-            startNode.HCost = Vector3.Distance(start, goal);
+
+            AStarNode startNode = new AStarNode(pos:start, goal:goal);
             openSet.Add(startNode);
             
             int maxIterations = 50000;
@@ -68,22 +62,16 @@ namespace Pathfinding
                     if (!IsTraversableAStar(neighborPos, carRadius))
                         continue;
                     
-                    float tentativeGCost = currentNode.GCost + Vector3.Distance(currentNode.Position, neighborPos);
-                    
                     AStarNode neighborNode = openSet.FirstOrDefault(n => n.Position == neighborPos);
                     
                     if (neighborNode == null)
                     {
-                        neighborNode = new AStarNode(neighborPos);
-                        neighborNode.GCost = tentativeGCost;
-                        neighborNode.HCost = Vector3.Distance(neighborPos, goal);
-                        neighborNode.Parent = currentNode;
+                        neighborNode = new AStarNode(pos: neighborPos, parent: currentNode, goal: goal);
                         openSet.Add(neighborNode);
                     }
-                    else if (tentativeGCost < neighborNode.GCost)
+                    else if (neighborNode.CostToCome(parent: currentNode) < neighborNode.GCost)
                     {
-                        neighborNode.GCost = tentativeGCost;
-                        neighborNode.Parent = currentNode;
+                        neighborNode.SwitchParent(currentNode);
                     }
                 }
             }
@@ -100,19 +88,56 @@ namespace Pathfinding
         private class AStarNode
         {
             public float GCost;
-            public float HCost;
+            public readonly float HCost;
             public AStarNode Parent;
-            public Vector3 Position;
+            public readonly Vector3 Position;
 
             /// <summary>
             /// Initializes a new AStarNode with the given position. gCost and hCost are set to infinity by default, and parent is null.
             /// </summary>
             /// <param name="pos">The position of the node. </param>
-            public AStarNode(Vector3 pos)
+            public AStarNode(Vector3 pos, Vector3 goal, AStarNode parent=null)
             {
                 Position = pos;
+                Parent = parent;
+
+                GCost = CostToCome(parent: parent);
+
+                HCost = Heuristic(goal:goal);
+            }
+            
+            private float Heuristic(Vector3 goal)
+            {
+                return Vector3.Distance(Position, goal);
             }
 
+            /// <summary>
+            /// Cost to come (gCost) is calculated as the parent's gCost plus the distance from the parent to this node. If there is no parent, gCost is 0.
+            /// </summary>
+            /// <returns>The cost to come to this node from start. </returns>
+            public float CostToCome(AStarNode parent)
+            {
+                var cost = 0f;
+                
+                if (parent != null)
+                {
+                    cost = parent.GCost + Vector3.Distance(parent.Position, Position);
+                }
+                
+                return cost;
+            }
+
+            /// <summary>
+            /// Switches the parent of this node to a new parent and updates the gCost accordingly. This is used when we find a better path to an existing node in the open set.
+            /// </summary>
+            /// <param name="newParent">The new parent node. </param>
+            public void SwitchParent(AStarNode newParent)
+            {
+                Parent = newParent;
+                GCost = CostToCome(parent:newParent);
+            }
+            
+            
             public float FCost => GCost + HCost;
         }
         
