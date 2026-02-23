@@ -21,7 +21,7 @@ namespace Pathfinding
         public List<Vector3> PlanPathAStar(Vector3 start, Vector3 goal)
         {
             const float gridSize = 2.0f;
-            const float carRadius = 0.9f;
+            const float carRadius = 1.1f;
             
             start = RoundToGrid(start, gridSize);
             goal = RoundToGrid(goal, gridSize);

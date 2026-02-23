@@ -4,7 +4,7 @@ namespace Pathfollowing
 {
     public static class LocalAvoidance
     {
-        public static (float steerAdjust, float brakeAdjust) CalculateSeparation(Transform myTransform, GameObject[] otherCars, float panicRadius)
+        public static (float steerAdjust, float brakeAdjust) CalculateSeparation(Transform myTransform, int myPriority, GameObject[] otherCars, float panicRadius)
         {
             float avoidSteering = 0f;
             float avoidBraking = 0f;
@@ -13,7 +13,14 @@ namespace Pathfollowing
             {
                 //.root, otherwise we also care about our own care (not good)
                 if (otherCar == null || otherCar.transform.root == myTransform.root) continue;
-
+                
+                AIP1TrafficCar otherCarScript = otherCar.GetComponent<AIP1TrafficCar>();
+                int otherPriority = otherCarScript != null ? otherCarScript.priority : 0;
+                
+                if (myPriority > otherPriority)
+                {
+                    continue; 
+                }
                 // flatten the Y-axis so we only care about 2D distance
                 Vector3 myPos = new Vector3(myTransform.position.x, 0, myTransform.position.z);
                 Vector3 otherPos = new Vector3(otherCar.transform.position.x, 0, otherCar.transform.position.z);

@@ -13,6 +13,9 @@ using Debug = UnityEngine.Debug;
 public class AIP1TrafficCar : Agent
 {
     public CarController car; // the car controller we want to use. Assigned in prefab
+
+    public int priority = 0;
+    private static int priorityCounter = 0;
     
     private GameObject[] _mOtherCars;
     private List<MultiVehicleGoal> _mCurrentGoals;
@@ -120,6 +123,10 @@ public class AIP1TrafficCar : Agent
     
     public override void Initialize()
     {
+        this.priority = priorityCounter;
+        priorityCounter++;
+        
+        
         var swTotal = new Stopwatch();
         var swLocal = new Stopwatch();
         
@@ -190,6 +197,7 @@ public class AIP1TrafficCar : Agent
         
         // Creates the PD Controller
         _controller = new Controller(nodes, MapManager.GetGlobalGoalPosition(), initialCarState);
+        _controller.priority = this.priority;
         swLocal.Stop();
         Debug.Log($"Smoothing and controller setup time: {swLocal.ElapsedMilliseconds} ms");
 
@@ -247,7 +255,7 @@ public class AIP1TrafficCar : Agent
         if (!_controller.isReversing)
         {
             float panicRadius = 10.0f;
-            var (avoidSteer, avoidBrake) = LocalAvoidance.CalculateSeparation(carTransform, _mOtherCars, panicRadius);
+            var (avoidSteer, avoidBrake) = LocalAvoidance.CalculateSeparation(carTransform, this.priority, _mOtherCars, panicRadius);
             
             finalSteering = Mathf.Clamp(_controller.steering + avoidSteer, -1f, 1f);
             

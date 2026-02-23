@@ -13,6 +13,9 @@ namespace Pathfollowing
         private const float K_D_STEERING = 0.3f;
         private const float K_P_SPEED = 1f;
         private const float K_D_SPEED = 0f;
+        
+
+        public int priority;
 
         public const float FRICTION = 1f;
         public const float CURV_CONST = 1f;
@@ -146,11 +149,17 @@ namespace Pathfollowing
             float targetSpeed = GetTargetSpeed(this.closestPoint, this.bestStartIndex, this.waypoints);
 
             targetSpeed *= 1.05f; // Want to avoid constantly accelerating and braking
+
+            
+            //BELOW IS A HARDCODED SOLUTION, REMOVE IT LATER!
+            float speedMultiplier = 1.0f - (this.priority * 0.05f); //Hardcoded solution just to clear map intersection
+            speedMultiplier = Mathf.Clamp(speedMultiplier, 0.3f, 1.0f);
+            targetSpeed *= speedMultiplier;
             targetSpeed += 1;
             
             float error = (targetSpeed - currentSpeed);
             float acceleration = K_P_SPEED * error + K_D_SPEED * (error - this.lastSpeedError) / Time.fixedDeltaTime;
-
+            
             if (acceleration < 0)
             {
                 this.footbrake = 1f;
@@ -247,11 +256,11 @@ namespace Pathfollowing
                 float accel;
                 if (vPrev <= 5.5)
                 {
-                    accel = 2.298f * Mathf.Pow(vPrev, 0.6582f);
+                    accel = 2.298f * Mathf.Pow(vPrev, 0.6582f); // Where do these numbers come from?
                 }
                 else
-                {
-                    float a = -0.1041002f;
+                 {
+                    float a = -0.1041002f; //And these?
                     float b = 6.78387f;
                     accel = a * vPrev + b;
                 }

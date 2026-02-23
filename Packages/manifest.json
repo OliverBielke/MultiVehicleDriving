@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.mas.assets": "file:../../MASUnityAssets",
+    "com.mas.assets": "file:C:/Users/jimbe/Documents/GitHub/MASUnityAssets",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.2d.tilemap": "1.0.0",
     "com.unity.2d.tilemap.extras": "6.0.1",
