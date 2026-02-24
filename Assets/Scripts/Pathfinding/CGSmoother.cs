@@ -83,7 +83,7 @@ namespace Pathfinding
                 if (collider is MeshCollider) // ClosestPoint() Does not work, might need more work later
                 {
                     Vector3 estimatedClosest = collider.bounds.center;
-                    Vector3 estClosestFlat = new Vector3(estimatedClosest.x, this.carHeight, estimatedClosest.z);
+                    Vector3 estClosestFlat = new Vector3(estimatedClosest.x, carHeight, estimatedClosest.z);
                     Vector3 dir = (estClosestFlat - pos).normalized;
                     // Shoots a 2D line at the estimated position to increase likelihood of actually hitting the real position
                     if (Physics.BoxCast(pos, new Vector3(0.5f, 0.5f, 0.5f), dir,out RaycastHit hit, Quaternion.LookRotation(dir), 50f))
@@ -117,9 +117,9 @@ namespace Pathfinding
 
         private Vector2 GetDistMapEntry(Vector2 v)
         {
-            int indexX = Mathf.RoundToInt(Mathf.Clamp((v.x - this.distStart.x) / this.stepX, 1f, DISTANCE_MAP_RESOLUTION-1));
-            int indexZ = Mathf.RoundToInt(Mathf.Clamp((v.y - this.distStart.z) / this.stepZ, 1f, DISTANCE_MAP_RESOLUTION-1));
-            return this.distMap[indexX][indexZ];
+            var indexX = Mathf.RoundToInt(Mathf.Clamp((v.x - distStart.x) / stepX, 1f, DISTANCE_MAP_RESOLUTION-1));
+            var indexZ = Mathf.RoundToInt(Mathf.Clamp((v.y - distStart.z) / stepZ, 1f, DISTANCE_MAP_RESOLUTION-1));
+            return distMap[indexX][indexZ];
         }
 
         public List<Node> GetResampledPath(List<Node> path, float spacing)

@@ -127,11 +127,11 @@ public class AIP1TrafficCar : Agent
         priorityCounter++;
         
         
-        var swTotal = new Stopwatch();
-        var swLocal = new Stopwatch();
+        //var swTotal = new Stopwatch();
+        //var swLocal = new Stopwatch();
         
-        swTotal.Start();
-        swLocal.Start();
+        //swTotal.Start();
+        //swLocal.Start();
         
         var gameManagerA2 = FindFirstObjectByType<GameManagerA2>();
         
@@ -160,10 +160,10 @@ public class AIP1TrafficCar : Agent
         Vector3 startPos = _initialCarState.position;
         Vector3 goalPos = targetObjects[0].transform.position;
         
-        swLocal.Stop();
-        Debug.Log($"Before anything: {swLocal.ElapsedMilliseconds} ms");
+        //swLocal.Stop();
+        //Debug.Log($"Before anything: {swLocal.ElapsedMilliseconds} ms");
         
-        swLocal.Restart();
+        //swLocal.Restart();
         Astar astar = new();
         List<Vector3> astarPath = astar.PlanPathAStar(startPos, goalPos);
         
@@ -183,10 +183,10 @@ public class AIP1TrafficCar : Agent
         {
             nodes.Add(new Node(pos.x, pos.z));
         }
-        swLocal.Stop();
-        Debug.Log($"A* planning time: {swLocal.ElapsedMilliseconds} ms");
+        //swLocal.Stop();
+        //Debug.Log($"A* planning time: {swLocal.ElapsedMilliseconds} ms");
         
-        swLocal.Restart();
+        //swLocal.Restart();
         // Smoothes the waypoints
         CGSmoother smoother = new CGSmoother(_initialCarState.position.y, groundCollider);
         nodes = smoother.GetSmoothedPath(nodes);
@@ -198,8 +198,8 @@ public class AIP1TrafficCar : Agent
         // Creates the PD Controller
         _controller = new Controller(nodes, MapManager.GetGlobalGoalPosition(), initialCarState);
         _controller.priority = this.priority;
-        swLocal.Stop();
-        Debug.Log($"Smoothing and controller setup time: {swLocal.ElapsedMilliseconds} ms");
+        //swLocal.Stop();
+        //Debug.Log($"Smoothing and controller setup time: {swLocal.ElapsedMilliseconds} ms");
 
     }
 
@@ -223,6 +223,7 @@ public class AIP1TrafficCar : Agent
         car.Move(steering, acceleration, acceleration, 0f);*/
         
         float currentSpeed = (transform.position - _lastPosition).magnitude / Time.fixedDeltaTime;
+        Vector3 currentVelocity = (transform.position - _lastPosition) / Time.fixedDeltaTime;
         _lastPosition = transform.position;
 
         // if we are moving slow AND not already reversing
@@ -254,7 +255,20 @@ public class AIP1TrafficCar : Agent
         
         if (!_controller.isReversing)
         {
+            /*float oldAcel = finalAccel;
+            float oldBrake = finalBrake;
+            float oldSteer = finalSteering;
+            
+            finalSteering = Mathf.Clamp(_controller.steering, -1f, 1f);
+            
+            Debug.Log($"Controls before avoidance: steer={oldSteer}, accel={oldAceel}, brake={oldBrake} | after avoidance: steer={finalSteering}, accel={finalAccel}, brake={finalBrake}");
+            */
+            /*
             float panicRadius = 10.0f;
+            float oldAceel = finalAccel;
+            float oldBrake = finalBrake;
+            float oldSteer = finalSteering;
+            
             var (avoidSteer, avoidBrake) = LocalAvoidance.CalculateSeparation(carTransform, this.priority, _mOtherCars, panicRadius);
             
             finalSteering = Mathf.Clamp(_controller.steering + avoidSteer, -1f, 1f);
@@ -262,6 +276,29 @@ public class AIP1TrafficCar : Agent
             finalAccel = avoidBrake > 0.1f ? 0f : _controller.acceleration;
             
             finalBrake = avoidBrake > 0.1f ? -1f : _controller.footbrake; 
+            
+            Debug.Log($"Controls before avoidance: steer={oldSteer}, accel={oldAceel}, brake={oldBrake} | after avoidance: steer={finalSteering}, accel={finalAccel}, brake={finalBrake}");
+            */
+            
+            float oldAccel = finalAccel;
+            float oldBrake = finalBrake;
+            float oldSteer = finalSteering;
+            
+            //var sw = new Stopwatch();
+            //sw.Start();
+            Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacles"));
+            MultiObstacleAvoidance avoidance = new MultiObstacleAvoidance(carTransform);
+            (finalAccel, finalSteering, finalBrake) = avoidance.getAdjustedControls(myTransform: carTransform, currentVelocity:currentVelocity, 
+                intendedSteer:finalSteering, intendedBrake:finalBrake, intendedAccel:finalAccel, otherCars:_mOtherCars, 
+                staticObstacles:obstacles);
+            
+            finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
+            
+            //sw.Stop();
+            //Debug.Log($"Obstacle avoidance time: {sw.ElapsedMilliseconds} ms");
+            
+            //Debug.Log($"Controls before avoidance: steer={oldSteer}, accel={oldAccel}, brake={oldBrake} | after avoidance: steer={finalSteering}, accel={finalAccel}, brake={finalBrake}");
+            
         }
         
         car.Move(finalSteering, finalAccel, finalBrake, _controller.handbrake);    }
