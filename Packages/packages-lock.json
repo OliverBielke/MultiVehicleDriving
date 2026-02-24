@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "com.mas.assets": {
-      "version": "file:C:/Users/jimbe/Documents/GitHub/MASUnityAssets",
+      "version": "file:../../MASUnityAssets",
       "depth": 0,
       "source": "local",
       "dependencies": {}
