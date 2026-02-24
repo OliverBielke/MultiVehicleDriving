@@ -16,6 +16,7 @@ public class AIP1TrafficCar : Agent
 
     public int priority = 0;
     private static int priorityCounter = 0;
+    private float _maxAcceleration;
     
     private GameObject[] _mOtherCars;
     private List<MultiVehicleGoal> _mCurrentGoals;
@@ -125,7 +126,7 @@ public class AIP1TrafficCar : Agent
     {
         this.priority = priorityCounter;
         priorityCounter++;
-        
+        _maxAcceleration = 4.5f + Random.value;
         
         //var swTotal = new Stopwatch();
         //var swLocal = new Stopwatch();
@@ -287,7 +288,7 @@ public class AIP1TrafficCar : Agent
             //var sw = new Stopwatch();
             //sw.Start();
             Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacles"));
-            MultiObstacleAvoidance avoidance = new MultiObstacleAvoidance(carTransform);
+            MultiObstacleAvoidance avoidance = new MultiObstacleAvoidance(carTransform, maxAcceleration:_maxAcceleration);
             (finalAccel, finalSteering, finalBrake) = avoidance.getAdjustedControls(myTransform: carTransform, currentVelocity:currentVelocity, 
                 intendedSteer:finalSteering, intendedBrake:finalBrake, intendedAccel:finalAccel, otherCars:_mOtherCars, 
                 staticObstacles:obstacles);

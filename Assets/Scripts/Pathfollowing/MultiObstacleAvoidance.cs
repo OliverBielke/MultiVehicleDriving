@@ -1,4 +1,3 @@
-using Imported.StandardAssets.Vehicles.Car.Scripts;
 using UnityEngine;
 
 namespace Pathfollowing
@@ -13,10 +12,10 @@ namespace Pathfollowing
         //Parameters
         private readonly float _safetyMargin = 0f;      // Strict distance margin (delta)
         private readonly float _timeHorizon = 3.0f;       // How far ahead to check for VO (seconds)
-        
-        private readonly float _maxAcceleration = 5f;     // Max accel capability (m/s^2), data from previous assignment
+
+        private readonly float _maxAcceleration;     // Max accel capability (m/s^2), data from previous assignment
         private readonly float _maxDeceleration = 5f;     // Max braking capability (m/s^2), data from previous assignment
-        private readonly float _maxSteeringAngle = 35f;   // Max wheel turn in degrees
+        private readonly float _maxSteeringAngle = 25f;   // Max wheel turn in degrees
         private readonly float _wheelbase = 2.5f;         // Distance between front and rear axles
         
         private float _weightReference = 1.0f;   // Weight for following intended input
@@ -29,9 +28,11 @@ namespace Pathfollowing
         private readonly float _vehicleRadius;   // Approximate radius of the car
         
         
-        public MultiObstacleAvoidance(Transform vehicleState)
+        public MultiObstacleAvoidance(Transform vehicleState, float maxAcceleration)
         {
             _vehicleRadius = vehicleState.GetComponent<Collider>().bounds.extents.z; //Approximate the radius by the width
+            //Debug.Log($"Acceleration set to {maxAcceleration}");
+            _maxAcceleration = maxAcceleration;
         }
         
         public (float newAccel, float newSteer, float newBrake) getAdjustedControls(Transform myTransform, Vector3 currentVelocity, 
@@ -41,6 +42,10 @@ namespace Pathfollowing
             float safeAccel;
             float safeSteer;
             float safeBrake;
+            
+            intendedSteer = Mathf.Clamp(intendedSteer, -1f, 1f);
+            intendedAccel = Mathf.Clamp(intendedAccel, 0f, 1f);
+            intendedBrake = Mathf.Clamp(intendedBrake, 0f, 1f);
             
             var pos = myTransform.position;
 
@@ -68,7 +73,7 @@ namespace Pathfollowing
 
                     // 1. Predict new velocity vector roughly based on steer and accel
                     // (Assuming steer directly affects angular velocity, simplified for kinematic prediction)
-                    Vector3 predictedForward = Quaternion.Euler(0, sampledSteer * 30f * Time.fixedDeltaTime, 0) * myTransform.forward;
+                    Vector3 predictedForward = Quaternion.Euler(0, sampledSteer * _maxSteeringAngle, 0) * myTransform.forward;
                     float predictedSpeed = Mathf.Max(0, currentForwardSpeed + sampledAccelValue * Time.fixedDeltaTime);
                     Vector3 predictedVelocity = predictedForward * predictedSpeed;
 
@@ -99,6 +104,7 @@ namespace Pathfollowing
             // If no mathematically safe solution is found, trigger maximum braking
             if (!foundSafeSolution)
             {
+                //Debug.Log("No safe control found, applying emergency brake!");
                 safeSteer = intendedSteer; 
                 safeAccel = 0f;
                 safeBrake = 1f;
@@ -122,7 +128,15 @@ namespace Pathfollowing
         // 1. Check against other agents
         foreach (var car in otherCars)
         {
-            if (car.transform.root == myTransform.root) continue; // Skip self
+            
+            // Get the Rigidbody for the ego car (do this once outside the loop if possible for performance, 
+            // but doing it here works perfectly for fixing the logic)
+            Rigidbody myRb = myTransform.GetComponentInParent<Rigidbody>();
+            Rigidbody otherRb = car.GetComponent<Rigidbody>(); // Or GetComponentInParent depending on your setup
+
+            // If both parts belong to the exact same physics body, they are the same car.
+            if (myRb != null && myRb == otherRb) continue;
+            
             
             Vector3 relativePos = car.transform.position - myPos;
             
@@ -140,12 +154,13 @@ namespace Pathfollowing
             // Velocity projected onto the relative direction
             float relSpeedProjected = Mathf.Min(0, Vector3.Dot(relativeVel, dir));
             
+            //Debug.Log($"Dist: {distance:F2} | MyVel: {predictedVelocity.magnitude:F2} | OtherVel: {otherVelocity.magnitude:F2} | ClosingSpeed: {relSpeedProjected:F2}");
             // CBF Function: h_c = distance - margin - (v_rel^2 / 2*a_max) >= 0
             float hc = distance - _safetyMargin - (Mathf.Pow(relSpeedProjected, 2) / (2f * _maxDeceleration));
             
             if (hc < 0)
             {
-                Debug.Log("Predicted collision with other car");
+                //Debug.Log("Predicted collision with other car");
                 return false; // This control breaks the safety barrier
             }
         }
@@ -164,6 +179,7 @@ namespace Pathfollowing
 
             if (hc < 0)
             {
+                //Debug.unityLogger.Log("Predicted collision with static obstacle");
                 return false;
             }
         }
@@ -182,12 +198,29 @@ namespace Pathfollowing
         // Calculate time-to-collision for dynamic agents
         foreach (var car in otherCars)
         {
-            if (car.transform.root == myTransform.root) continue;
+            // Get the Rigidbody for the ego car (do this once outside the loop if possible for performance, 
+            // but doing it here works perfectly for fixing the logic)
+            Rigidbody myRb = myTransform.GetComponentInParent<Rigidbody>();
+            Rigidbody otherRb = car.GetComponent<Rigidbody>(); // Or GetComponentInParent depending on your setup
+
+            // If both parts belong to the exact same physics body, they are the same car.
+            if (myRb != null && myRb == otherRb) continue;
 
             Rigidbody rb = car.GetComponent<Rigidbody>();
             Vector3 otherVelocity = rb != null ? rb.linearVelocity : Vector3.zero;
             Vector3 relativeVel = predictedVelocity - otherVelocity;
             Vector3 relativePos = car.transform.position - myPos;
+            
+            float distance = relativePos.magnitude;
+
+            // If they are side-by-side (e.g., within 4 car lengths), add a tiny soft penalty
+            // to encourage them to fan out or pass, rather than lingering.
+            /*if (distance < _vehicleRadius * 40) 
+            {
+                // The closer they are, the higher the penalty. 
+                // Kept small so it doesn't overpower actual collision avoidance.
+                totalPenalty += 20f / (distance + 0.1f); 
+            }*/
 
             float ttc = ComputeTimeToCollision(relativePos, relativeVel, _vehicleRadius * 2);
             if (ttc > 0 && ttc < _timeHorizon)
