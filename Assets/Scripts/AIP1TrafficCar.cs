@@ -126,7 +126,7 @@ public class AIP1TrafficCar : Agent
     {
         this.priority = priorityCounter;
         priorityCounter++;
-        _maxAcceleration = 4.5f + Random.value;
+        _maxAcceleration = 5f;// + Random.value;
         
         //var swTotal = new Stopwatch();
         //var swLocal = new Stopwatch();
@@ -239,7 +239,7 @@ public class AIP1TrafficCar : Agent
                 stuckTimer = 0f;
             }
         }
-        else if (currentSpeed >= 0.5f)
+        else if (currentSpeed >= 0.5f || stuckTimer > 10f) // if we are moving or have been stuck for a long time, reset the timer and stop reversing
         {
             stuckTimer = 0f; // reset if we are moving normally
         }
@@ -256,50 +256,13 @@ public class AIP1TrafficCar : Agent
         
         if (!_controller.isReversing)
         {
-            /*float oldAcel = finalAccel;
-            float oldBrake = finalBrake;
-            float oldSteer = finalSteering;
-            
-            finalSteering = Mathf.Clamp(_controller.steering, -1f, 1f);
-            
-            Debug.Log($"Controls before avoidance: steer={oldSteer}, accel={oldAceel}, brake={oldBrake} | after avoidance: steer={finalSteering}, accel={finalAccel}, brake={finalBrake}");
-            */
-            /*
-            float panicRadius = 10.0f;
-            float oldAceel = finalAccel;
-            float oldBrake = finalBrake;
-            float oldSteer = finalSteering;
-            
-            var (avoidSteer, avoidBrake) = LocalAvoidance.CalculateSeparation(carTransform, this.priority, _mOtherCars, panicRadius);
-            
-            finalSteering = Mathf.Clamp(_controller.steering + avoidSteer, -1f, 1f);
-            
-            finalAccel = avoidBrake > 0.1f ? 0f : _controller.acceleration;
-            
-            finalBrake = avoidBrake > 0.1f ? -1f : _controller.footbrake; 
-            
-            Debug.Log($"Controls before avoidance: steer={oldSteer}, accel={oldAceel}, brake={oldBrake} | after avoidance: steer={finalSteering}, accel={finalAccel}, brake={finalBrake}");
-            */
-            
-            float oldAccel = finalAccel;
-            float oldBrake = finalBrake;
-            float oldSteer = finalSteering;
-            
-            //var sw = new Stopwatch();
-            //sw.Start();
-            Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacles"));
+            Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacle"));
             MultiObstacleAvoidance avoidance = new MultiObstacleAvoidance(carTransform, maxAcceleration:_maxAcceleration);
             (finalAccel, finalSteering, finalBrake) = avoidance.getAdjustedControls(myTransform: carTransform, currentVelocity:currentVelocity, 
                 intendedSteer:finalSteering, intendedBrake:finalBrake, intendedAccel:finalAccel, otherCars:_mOtherCars, 
                 staticObstacles:obstacles);
             
             finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
-            
-            //sw.Stop();
-            //Debug.Log($"Obstacle avoidance time: {sw.ElapsedMilliseconds} ms");
-            
-            //Debug.Log($"Controls before avoidance: steer={oldSteer}, accel={oldAccel}, brake={oldBrake} | after avoidance: steer={finalSteering}, accel={finalAccel}, brake={finalBrake}");
-            
         }
         
         car.Move(finalSteering, finalAccel, finalBrake, _controller.handbrake);    }
