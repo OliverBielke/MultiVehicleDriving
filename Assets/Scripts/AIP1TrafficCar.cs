@@ -256,13 +256,18 @@ public class AIP1TrafficCar : Agent
         
         if (!_controller.isReversing)
         {
-            Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacle"));
-            MultiObstacleAvoidance avoidance = new MultiObstacleAvoidance(carTransform, maxAcceleration:_maxAcceleration);
-            (finalAccel, finalSteering, finalBrake) = avoidance.getAdjustedControls(myTransform: carTransform, currentVelocity:currentVelocity, 
-                intendedSteer:finalSteering, intendedBrake:finalBrake, intendedAccel:finalAccel, otherCars:_mOtherCars, 
-                staticObstacles:obstacles);
             
-            finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
+            /*Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacle"));
+            MultiObstacleAvoidance avoidance = new MultiObstacleAvoidance(carTransform, maxAcceleration:_maxAcceleration);
+            (finalAccel, finalSteering, finalBrake) = avoidance.getAdjustedControls(myTransform: carTransform, currentVelocity:currentVelocity,
+                intendedSteer:finalSteering, intendedBrake:finalBrake, intendedAccel:finalAccel, otherCars:_mOtherCars,
+                staticObstacles:obstacles);
+
+            finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);*/
+            
+            var voStop = new VOStop(carTransform, _mOtherCars);
+            (finalAccel, finalSteering, finalBrake) = voStop.GetAdjustedControls(currentVelocity, 
+                finalSteering, finalBrake, finalAccel);
         }
         
         car.Move(finalSteering, finalAccel, finalBrake, _controller.handbrake);    }
