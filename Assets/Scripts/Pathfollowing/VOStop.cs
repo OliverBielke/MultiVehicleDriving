@@ -11,6 +11,7 @@ namespace Pathfollowing
     {
         public Vector2 Position;
         public Vector2 Velocity;
+        public Vector2 Forward;
         public float Radius;
     }
 
@@ -18,7 +19,7 @@ namespace Pathfollowing
     {
         // How many seconds into the future we look for collisions
         private const float TimeHorizon = 10f;
-        private const float SpaceMargin = 2f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
+        private const float SpaceMargin = 6f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
         private const float MaxSpeed = 5f;
 
         private readonly Transform _myTransform;
@@ -57,6 +58,7 @@ namespace Pathfollowing
             {
                 Position = new Vector2(_myTransform.position.x, _myTransform.position.z),
                 Velocity = new Vector2(currentVelocity.x, currentVelocity.z),
+                Forward = new Vector2(_myTransform.forward.x, _myTransform.forward.z).normalized,
                 Radius = _myTransform.GetComponent<Collider>().bounds.extents.z + SpaceMargin //Approximate the radius by the width
             };
             
@@ -87,6 +89,9 @@ namespace Pathfollowing
 
             foreach (var car in _otherCars)
             {
+                // Safety check: Skip ourselves if we accidentally ended up in the _otherCars array!
+                if (car.transform == _myTransform) continue;
+                
                 var rb = car.GetComponent<Rigidbody>();
                 var velocity = rb != null ? rb.linearVelocity : Vector3.zero;
 
@@ -94,6 +99,7 @@ namespace Pathfollowing
                 {
                     Position = new Vector2(car.transform.position.x, car.transform.position.z),
                     Velocity = new Vector2(velocity.x, velocity.z),
+                    Forward = new Vector2(car.transform.forward.x, car.transform.forward.z).normalized,
                     Radius = radius
                 });
             }
@@ -109,15 +115,9 @@ namespace Pathfollowing
         /// <param name="surroundingVehicles">The states of all surrounding vehicles. </param>
         /// <returns>True if an imminent collision is detected and this vehicle must yield; otherwise, false.</returns>
         private static bool EvaluateShouldStop(VehicleState thisVehicle, List<VehicleState> surroundingVehicles)
-        {
-            // If we are practically stopped, we don't have a forward direction and don't need to stop further.
-            if (thisVehicle.Velocity.sqrMagnitude < 0.0001f)
-            {
-                return false;
-            }
-
-            // Normalize our velocity to get a pure directional vector (length of 1)
-            var forwardDir = thisVehicle.Velocity.normalized;
+        { 
+            
+            var forwardDir = thisVehicle.Forward;
 
             foreach (var obstacle in surroundingVehicles)
             {
@@ -137,17 +137,30 @@ namespace Pathfollowing
                 var dotProduct = Vector2.Dot(forwardDir, relativePosition);
                 var isInFront = dotProduct > 0;
 
+                // We never brake for cars behind us; it is their responsibility to brake for us.
+                if (dotProduct < 0)
+                {
+                    continue; // Skip this car
+                }
+                
+                // Check if we are traveling in the same general direction
+                // (A dot product > 0.5 roughly means they are pointing within 60 degrees of each other)
+                var alignment = Vector2.Dot(thisVehicle.Forward, obstacle.Forward);
+                var isSameDirection = alignment > 0.5f;
+
                 // 2D Cross Product to check if the obstacle is to our right
-                // Formula: (Forward.X * Target.Y) - (Forward.Y * Target.X)
-                // Note: Assumes standard math coordinates (X is right, Y is up). 
                 var crossProduct = (forwardDir.x * relativePosition.y) - (forwardDir.y * relativePosition.x);
                 var isToRight = crossProduct < 0;
 
-                // Step 3c: Apply Right-Of-Way rules. 
-                // If it is NOT in front AND NOT to the right, we have the right of way. Skip it!
-                if (!isInFront && !isToRight)
+                // The absolute value of the cross product is the lateral distance to the obstacle.
+                var lateralOffset = Mathf.Abs(crossProduct);
+                var isDirectlyInFront = lateralOffset <= combinedRadius;
+
+                // NEW LOGIC: Right-of-way ("Yield to the right") should ONLY apply at intersections!
+                // If we are driving the same direction, we MUST check for collisions, regardless of what side they are on.
+                if (!isSameDirection && !isToRight && !isDirectlyInFront) 
                 {
-                    continue;
+                    continue; 
                 }
 
                 // Calculate Time to Collision (TTC)
@@ -213,7 +226,7 @@ namespace Pathfollowing
             Vector2 relativeVelocity, float combinedRadius, Color color)
         {
             const float drawHeight = 1f; 
-            const float furthestDrawDistance = 50f;
+            const float furthestDrawDistance = 30f;
             const float drawScale = 0.5f;
     
             var dist = relativePosition.magnitude;

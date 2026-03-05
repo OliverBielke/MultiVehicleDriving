@@ -228,7 +228,7 @@ public class AIP1TrafficCar : Agent
         _lastPosition = transform.position;
 
         // if we are moving slow AND not already reversing
-        if (currentSpeed < 0.5f && !_controller.isReversing) 
+        if (currentSpeed < 0.1f && !_controller.isReversing) 
         {
             stuckTimer += Time.fixedDeltaTime;
             if (stuckTimer > stuckThreshold)
