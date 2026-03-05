@@ -19,7 +19,7 @@ namespace Pathfollowing
     {
         // How many seconds into the future we look for collisions
         private const float TimeHorizon = 10f;
-        private const float SpaceMargin = 0.5f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
+        private const float SpaceMargin = 1f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
         private const float MaxSpeed = 5f;
 
         private readonly Transform _myTransform;
@@ -191,7 +191,14 @@ namespace Pathfollowing
                 // This inflates the obstacle's size so we can mathematically treat ThisVehicle as a single point.
                 var combinedRadius = thisVehicle.Radius + obstacle.Radius;
 
-                // Dot Product to check if the obstacle is in front of us
+                if (HasRightOfWay(thisVehicle, obstacle))
+                {
+                    // We have right of way over this obstacle, so we can ignore it for collision checking.
+                    DrawDebugVO(thisVehicle, relativePosition, relativeVelocity, combinedRadius, Color.cyan);
+                    continue;
+                }
+                
+                /*// Dot Product to check if the obstacle is in front of us
                 var dotProduct = Vector2.Dot(forwardDir, relativePosition);
                 var isInFront = dotProduct > 0;
 
@@ -219,7 +226,7 @@ namespace Pathfollowing
                 if (!isSameDirection && !isToRight && !isDirectlyInFront) 
                 {
                     continue; 
-                }
+                }*/
 
                 // Calculate Time to Collision (TTC)
                 // Starting from the equation ||V*t - P|| = R, we derive a quadratic formula to solve for t (time until collision).
@@ -273,6 +280,28 @@ namespace Pathfollowing
         }
 
 
+        private static bool HasRightOfWay(VehicleState thisVehicle, VehicleState obstacle)
+        {
+            // Dot Product to check if the obstacle is in front of us
+            var relativePosition = obstacle.Position - thisVehicle.Position;
+            var dotProduct = Vector2.Dot(thisVehicle.Forward, relativePosition);
+            var isInFront = dotProduct > 0;
+
+            // We never brake for cars behind us; it is their responsibility to brake for us.
+            if (!isInFront)
+            {
+                return true; // We have right of way over cars behind us
+            }
+
+            // 2D Cross Product to check if the obstacle is to our right
+            var crossProduct = (thisVehicle.Forward.x * relativePosition.y) - (thisVehicle.Forward.y * relativePosition.x);
+            var isToRight = crossProduct < 0;
+
+            return isToRight; // We have right of way if the other car is to our right
+            
+        }
+        
+        
         /// <summary>
         /// Draws the VO for debugging. 
         /// </summary>
