@@ -17,7 +17,9 @@ namespace Pathfollowing
     public class VOStop
     {
         // How many seconds into the future we look for collisions
-        private const float TimeHorizon = 3.0f;
+        private const float TimeHorizon = 10f;
+        private const float SpaceMargin = 2f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
+        private const float MaxSpeed = 5f;
 
         private readonly Transform _myTransform;
         private readonly GameObject[] _otherCars;
@@ -55,14 +57,14 @@ namespace Pathfollowing
             {
                 Position = new Vector2(_myTransform.position.x, _myTransform.position.z),
                 Velocity = new Vector2(currentVelocity.x, currentVelocity.z),
-                Radius = _myTransform.GetComponent<Collider>().bounds.extents.z //Approximate the radius by the width
+                Radius = _myTransform.GetComponent<Collider>().bounds.extents.z + SpaceMargin //Approximate the radius by the width
             };
             
             var otherStateList = GetSurroundingVehicleStates(thisVehicle.Radius);
 
             var shouldStop = EvaluateShouldStop(thisVehicle, otherStateList);
 
-            if (shouldStop)
+            if (shouldStop || thisVehicle.Velocity.magnitude > MaxSpeed)
             {
                 // Imminent collision! Override controls to stop immediately.
                 // You could expand this later to proportionally brake based on TTC.
@@ -149,7 +151,7 @@ namespace Pathfollowing
                 }
 
                 // Calculate Time to Collision (TTC)
-                // Startin from the equation ||V*t - P|| = R, we derive a quadratic formula to solve for t (time until collision).
+                // Starting from the equation ||V*t - P|| = R, we derive a quadratic formula to solve for t (time until collision).
                 // Quadratic equation: a*t^2 + b*t + c = 0
                 var a = relativeVelocity.sqrMagnitude;
                 var b = -2f * Vector2.Dot(relativeVelocity, relativePosition);
@@ -188,7 +190,12 @@ namespace Pathfollowing
                     DrawDebugVO(thisVehicle, relativePosition, relativeVelocity, combinedRadius, Color.red);
                     return true; // Imminent collision detected!
                 }
-
+                if (t > TimeHorizon)
+                {
+                    // Collision course, but outside the Time Horizon (Safe for now)
+                    DrawDebugVO(thisVehicle, relativePosition, relativeVelocity, combinedRadius, Color.yellow);
+                }
+                
             }
 
             return false;
@@ -205,52 +212,38 @@ namespace Pathfollowing
         private static void DrawDebugVO(VehicleState thisVehicle, Vector2 relativePosition, 
             Vector2 relativeVelocity, float combinedRadius, Color color)
         {
-            //Variables
-            const float drawHeight = 1f; // Height at which to draw the debug lines (adjust as needed)
-            const float furthestDrawDistance = 50f; // Maximum distance to draw the VO cone and velocity vector for better visibility
-            const float drawSizeMultiplier = 0.2f; // Multiplier to scale the size of the drawn elements for better visibility
-            
-            // Only draw if the obstacle is within a reasonable distance to prevent clutter
-            if (relativePosition.magnitude > furthestDrawDistance)
-            {
-                return;
-            }
-            
-            // 3D Start position for our debug lines
-            var egoPos3D = new Vector3(thisVehicle.Position.x, drawHeight, thisVehicle.Position.y);
-            
+            const float drawHeight = 1f; 
+            const float furthestDrawDistance = 50f;
+            const float drawScale = 0.5f;
+    
             var dist = relativePosition.magnitude;
-                
-            // 1. Draw the VO Cone
-            if (dist > combinedRadius)
-            {
-                // Calculate the angle of the tangent lines
-                var angle = Mathf.Asin(combinedRadius / dist) * Mathf.Rad2Deg;
-                    
-                var centerLine = new Vector3(relativePosition.x, 0, relativePosition.y);
-                    
-                // Rotate the center line by +/- angle to get the cone edges
-                var leftTangent = Quaternion.Euler(0, -angle, 0) * centerLine;
-                var rightTangent = Quaternion.Euler(0, angle, 0) * centerLine;
+            if (dist <= combinedRadius || dist > furthestDrawDistance) return;
+    
+            var egoPos3D = new Vector3(thisVehicle.Position.x, drawHeight, thisVehicle.Position.y);
+        
+            // 1. Draw the VO Cone to the obstacle's distance
+            var angle = Mathf.Asin(combinedRadius / dist) * Mathf.Rad2Deg;
+            var centerLine = new Vector3(relativePosition.x, 0, relativePosition.y);
+        
+            var leftTangent = Quaternion.Euler(0, -angle, 0) * centerLine;
+            var rightTangent = Quaternion.Euler(0, angle, 0) * centerLine;
 
-                // Draw the edges of the cone
-                Debug.DrawRay(egoPos3D, leftTangent.normalized * (dist*drawSizeMultiplier), color);
-                Debug.DrawRay(egoPos3D, rightTangent.normalized * (dist*drawSizeMultiplier), color);
-                
-                // 1. Calculate the exact world positions of the left and right endpoints
-                Vector3 leftPoint = egoPos3D + (leftTangent.normalized * (dist * drawSizeMultiplier));
-                Vector3 rightPoint = egoPos3D + (rightTangent.normalized * (dist * drawSizeMultiplier));
+            // Draw the cone stretching exactly to the distance of the obstacle
+            Vector3 leftPoint = egoPos3D + leftTangent*drawScale;
+            Vector3 rightPoint = egoPos3D + rightTangent*drawScale;
 
-                // 2. Use DrawLine to connect point A to point B
-                Debug.DrawLine(leftPoint, rightPoint, color);
-            }
+            Debug.DrawLine(egoPos3D, leftPoint, color);
+            Debug.DrawLine(egoPos3D, rightPoint, color);
+            Debug.DrawLine(leftPoint, rightPoint, color); // Cap the cone
 
-            // 2. Draw the Relative Velocity Vector
-            // Only draw it if there is a meaningful relative velocity to prevent screen clutter
-            if (relativeVelocity.sqrMagnitude > 0.1f)
+            // 2. Draw the Relative Velocity Vector scaled by TimeHorizon
+            if (relativeVelocity.sqrMagnitude > 0.01f)
             {
                 var relVel3D = new Vector3(relativeVelocity.x, 0, relativeVelocity.y);
-                Debug.DrawRay(egoPos3D, relVel3D * drawSizeMultiplier, Color.blue);
+
+                // The length of this line is exactly how much relative distance 
+                // will be covered in 'TimeHorizon' seconds.
+                Debug.DrawRay(egoPos3D, relVel3D * (TimeHorizon*drawScale), Color.blue);
             }
         }
     }

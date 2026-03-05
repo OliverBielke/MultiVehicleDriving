@@ -14,7 +14,7 @@ namespace Pathfinding
         private const float ALPHA = 0.005f; //Changed from 0.00005f for faster runtime
         public const float D_MAX = 4.0f; // Was 2.4f
         //private const float W_COLLISION = 10000f;
-        private const float W_COLLISION = 200f; //Changed to 200 for new mechanics, original is 10000
+        private const float W_COLLISION = 500f; //Changed to 200 for new mechanics, original is 10000
 
 
         //private const float W_CURVATURE = 5f;
