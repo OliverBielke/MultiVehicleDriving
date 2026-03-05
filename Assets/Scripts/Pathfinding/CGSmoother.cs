@@ -12,9 +12,9 @@ namespace Pathfinding
     {
         //private const float ALPHA = 0.00005f;
         private const float ALPHA = 0.005f; //Changed from 0.00005f for faster runtime
-        public const float D_MAX = 4.0f; // Was 2.4f
+        public const float D_MAX = 5.0f; // Was 2.4f
         //private const float W_COLLISION = 10000f;
-        private const float W_COLLISION = 500f; //Changed to 200 for new mechanics, original is 10000
+        private const float W_COLLISION = 1000f; //Changed to 200 for new mechanics, original is 10000
 
 
         //private const float W_CURVATURE = 5f;
@@ -29,7 +29,7 @@ namespace Pathfinding
         private const int MAX_INNER_ITER = 1000; //Changed to 1000 for faster runtime
         private const float MAX_GRADIENT = 100f;
         
-        private const float RIGHT_DRIVE = 2.0f; //Pushes path to right side
+        private const float RIGHT_DRIVE = 5.0f; //Pushes path to right side
     
     public CGSmoother(float carHeight, Collider map)
         {

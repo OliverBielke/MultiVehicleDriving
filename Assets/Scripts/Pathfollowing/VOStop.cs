@@ -19,7 +19,7 @@ namespace Pathfollowing
     {
         // How many seconds into the future we look for collisions
         private const float TimeHorizon = 10f;
-        private const float SpaceMargin = 6f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
+        private const float SpaceMargin = 0.5f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
         private const float MaxSpeed = 5f;
 
         private readonly Transform _myTransform;
@@ -53,27 +53,27 @@ namespace Pathfollowing
             )
         {
             
-            // Build the state for this ego vehicle
-            var thisVehicle = new VehicleState
-            {
-                Position = new Vector2(_myTransform.position.x, _myTransform.position.z),
-                Velocity = new Vector2(currentVelocity.x, currentVelocity.z),
-                Forward = new Vector2(_myTransform.forward.x, _myTransform.forward.z).normalized,
-                Radius = _myTransform.GetComponent<Collider>().bounds.extents.z + SpaceMargin //Approximate the radius by the width
-            };
-            
-            var otherStateList = GetSurroundingVehicleStates(thisVehicle.Radius);
+            // Build the nodes for our own vehicle
+            var egoNodes = GetVehicleNodes(_myTransform, currentVelocity);
+            var surroundingNodes = GetSurroundingVehicleNodes();
 
-            var shouldStop = EvaluateShouldStop(thisVehicle, otherStateList);
+            bool shouldStop = false;
 
-            if (shouldStop || thisVehicle.Velocity.magnitude > MaxSpeed)
+            // If ANY of our vehicle's circles are on a collision course with ANY obstacle circle, we stop.
+            foreach (var egoNode in egoNodes)
             {
-                // Imminent collision! Override controls to stop immediately.
-                // You could expand this later to proportionally brake based on TTC.
+                if (EvaluateShouldStop(egoNode, surroundingNodes))
+                {
+                    shouldStop = true;
+                    break;
+                }
+            }
+
+            if (shouldStop || currentVelocity.magnitude > MaxSpeed)
+            {
                 return (0f, intendedSteer, 1f);
             }
 
-            // Safe to proceed, return intended controls
             return (intendedAccel, intendedSteer, intendedBrake);
         }
 
@@ -83,9 +83,9 @@ namespace Pathfollowing
         /// </summary>
         /// <param name="radius">Radius of the cars. </param>
         /// <returns>A list of all surrounding vehicle states. </returns>
-        private List<VehicleState> GetSurroundingVehicleStates(float radius)
+        private List<VehicleState> GetSurroundingVehicleNodes()
         {
-            var states = new List<VehicleState>();
+            var allNodes = new List<VehicleState>();
 
             foreach (var car in _otherCars)
             {
@@ -95,19 +95,77 @@ namespace Pathfollowing
                 var rb = car.GetComponent<Rigidbody>();
                 var velocity = rb != null ? rb.linearVelocity : Vector3.zero;
 
-                states.Add(new VehicleState
-                {
-                    Position = new Vector2(car.transform.position.x, car.transform.position.z),
-                    Velocity = new Vector2(velocity.x, velocity.z),
-                    Forward = new Vector2(car.transform.forward.x, car.transform.forward.z).normalized,
-                    Radius = radius
-                });
+                // Generate the 1 or 2 nodes for this specific obstacle
+                var obstacleNodes = GetVehicleNodes(car.transform, velocity);
+                allNodes.AddRange(obstacleNodes);
             }
 
-            return states;
+            return allNodes;
         }
         
-            
+        
+        /// <summary>
+        /// Approximates a vehicle's shape using 1 or more circular nodes.
+        /// </summary>
+        /// <param name="vehicleTransform">The transform of the vehicle. </param>
+        /// <param name="currentVelocity">Current velocity of the vehicle. </param>
+        private List<VehicleState> GetVehicleNodes(Transform vehicleTransform, Vector3 currentVelocity)
+        {
+            var nodes = new List<VehicleState>();
+            var vel2D = new Vector2(currentVelocity.x, currentVelocity.z);
+            var forward2D = new Vector2(vehicleTransform.forward.x, vehicleTransform.forward.z).normalized;
+            var pos2D = new Vector2(vehicleTransform.position.x, vehicleTransform.position.z);
+
+            // Get the local dimensions (avoids the world-space rotation bounds bug)
+            var boxCol = vehicleTransform.GetComponent<BoxCollider>();
+            float halfWidth, halfLength;
+
+            if (boxCol != null)
+            {
+                // For rectangular cars
+                halfWidth = (boxCol.size.x * vehicleTransform.lossyScale.x) / 2f;
+                halfLength = (boxCol.size.z * vehicleTransform.lossyScale.z) / 2f;
+            }
+            else
+            {
+                // Fallback for drones (assuming SphereCollider or roughly circular)
+                var sphereCol = vehicleTransform.GetComponent<SphereCollider>();
+                halfWidth = sphereCol != null ? (sphereCol.radius * vehicleTransform.lossyScale.x) : 1f;
+                halfLength = halfWidth; 
+            }
+
+            // Now our radius is strictly based on width, keeping us in our lane!
+            float radius = halfWidth + SpaceMargin;
+
+            if (halfLength <= halfWidth * 1.2f)
+            {
+                // Shape is roughly square/circular (Drone). One node is sufficient.
+                nodes.Add(new VehicleState { Position = pos2D, Velocity = vel2D, Forward = forward2D, Radius = radius });
+            }
+            else
+            {
+                // Shape is a rectangle (Car). Create a front and back node.
+                float offset = halfLength - halfWidth; 
+                
+                // Front Circle Node
+                nodes.Add(new VehicleState { 
+                    Position = pos2D + forward2D * offset, 
+                    Velocity = vel2D, Forward = forward2D, Radius = radius 
+                });
+                
+                // Back Circle Node
+                nodes.Add(new VehicleState { 
+                    Position = pos2D - forward2D * offset, 
+                    Velocity = vel2D, Forward = forward2D, Radius = radius 
+                });
+                
+                // Note: If you have massive trucks, you could add a 3rd middle circle here.
+            }
+
+            return nodes;
+        }
+        
+        
         /// <summary>
         /// Evaluates surrounding traffic to determine if this vehicle must stop.
         /// </summary>
@@ -226,7 +284,7 @@ namespace Pathfollowing
             Vector2 relativeVelocity, float combinedRadius, Color color)
         {
             const float drawHeight = 1f; 
-            const float furthestDrawDistance = 30f;
+            const float furthestDrawDistance = 60f;
             const float drawScale = 0.5f;
     
             var dist = relativePosition.magnitude;
