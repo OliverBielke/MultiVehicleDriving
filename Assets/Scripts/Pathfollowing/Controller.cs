@@ -14,7 +14,7 @@ namespace Pathfollowing
         private const float K_P_SPEED = 1f;
         private const float K_D_SPEED = 0f;
         
-
+        
         public int priority;
 
         public const float FRICTION = 1f;
@@ -23,6 +23,9 @@ namespace Pathfollowing
 
         public bool isReversing = false;
         public float reverseTimer = 0f;
+        
+        public bool HasReachedGoal = false;
+        public float stoppingDistance = 3f; // Adjust based on the size of your car/goal
 
         public Controller(List<Node> waypoints, Vector3 goal, Transform carState)
         {
@@ -60,6 +63,10 @@ namespace Pathfollowing
         public void StanleyCalculateMove(Transform carTransform)
         {
             this.currCarState = carTransform;
+            
+            // Check if we reached the end before doing any calculations
+            if (CheckGoalReached()) return;
+            
             StanleyCalculateSteer();
             // Still use PD for acceleration
             CalculateAcceleration();
@@ -121,6 +128,9 @@ namespace Pathfollowing
         public void PDCalculateMove(Transform carTransform)
         {
             this.currCarState = carTransform;
+            
+            // Check if we reached the end before doing any calculations
+            if (CheckGoalReached()) return;
             
             if (isReversing) //if we should reverse instead
             {
@@ -365,5 +375,26 @@ namespace Pathfollowing
             float cappedMagnitude = Mathf.Clamp(magnitude, 0f, (end - start).magnitude);
             return start + (segmentDirection * cappedMagnitude);
         }
+        
+        private bool CheckGoalReached()
+        {
+            // Check distance on the X/Z plane to ignore elevation differences
+            Vector2 currentPos2D = new Vector2(this.currCarState.position.x, this.currCarState.position.z);
+            Vector2 goal2D = new Vector2(this.goal.x, this.goal.z);
+
+            if (Vector2.Distance(currentPos2D, goal2D) <= stoppingDistance)
+            {
+                Debug.Log("Goal reached!");
+                this.HasReachedGoal = true;
+                this.acceleration = 0f;
+                this.footbrake = 1f;
+                this.handbrake = 1f; // Apply handbrake for a hard stop
+                this.steering = 0f;  // Straighten the wheels
+                return true;
+            }
+    
+            return false;
+        }
+        
     }
 }

@@ -197,7 +197,7 @@ public class AIP1TrafficCar : Agent
         _lastPosition = transform.position; //For reversal
         
         // Creates the PD Controller
-        _controller = new Controller(nodes, MapManager.GetGlobalGoalPosition(), initialCarState);
+        _controller = new Controller(nodes, goalPos, initialCarState);
         _controller.priority = this.priority;
         //swLocal.Stop();
         //Debug.Log($"Smoothing and controller setup time: {swLocal.ElapsedMilliseconds} ms");
@@ -228,7 +228,7 @@ public class AIP1TrafficCar : Agent
         _lastPosition = transform.position;
 
         // if we are moving slow AND not already reversing
-        if (currentSpeed < 0.1f && !_controller.isReversing) 
+        if (currentSpeed < 0.1f && !_controller.isReversing && !_controller.HasReachedGoal) 
         {
             stuckTimer += Time.fixedDeltaTime;
             if (stuckTimer > stuckThreshold)
@@ -245,16 +245,26 @@ public class AIP1TrafficCar : Agent
         }
         
         // Gets current car state
-        Transform carTransform = gameObject.transform.Find("Colliders/ColliderBody").transform;
+        var carTransform = gameObject.transform.Find("Colliders/ColliderBody").transform;
         
         // Calculates the move
         _controller.PDCalculateMove(carTransform);
         
-        float finalSteering = _controller.steering;
-        float finalAccel = _controller.acceleration;
-        float finalBrake = _controller.footbrake;
+        var finalSteering = _controller.steering;
+        var finalAccel = _controller.acceleration;
+        var finalBrake = _controller.footbrake;
+        var finalHandbrake = _controller.handbrake;
         
-        if (!_controller.isReversing)
+        if (_controller.HasReachedGoal)
+        {
+            // Force a complete stop, ignoring everything else
+            finalSteering = 0f;
+            finalAccel = 0f;
+            finalBrake = 0f;
+            finalHandbrake = 1f;
+        }
+        
+        if (!_controller.isReversing && !_controller.HasReachedGoal)
         {
             
             /*Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacle"));
@@ -270,8 +280,10 @@ public class AIP1TrafficCar : Agent
                 finalSteering, finalBrake, finalAccel);
         }
         
-        car.Move(finalSteering, finalAccel, finalBrake, _controller.handbrake);    }
+        car.Move(finalSteering, finalAccel, finalBrake, finalHandbrake);
+    }
 
+    
     private (float steering, float acceleration) ControlsTowardsPoint(Vector3 avg_pos)
     {
         Vector3 direction = (avg_pos - transform.position).normalized;
