@@ -261,7 +261,7 @@ public class AIP1TrafficCar : Agent
             finalSteering = 0f;
             finalAccel = 0f;
             finalBrake = 0f;
-            finalHandbrake = 1f;
+            finalHandbrake = 0f;
         }
         
         if (!_controller.isReversing && !_controller.HasReachedGoal)
