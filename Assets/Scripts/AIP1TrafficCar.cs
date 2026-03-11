@@ -148,10 +148,10 @@ public class AIP1TrafficCar : Agent
         teamVehicles = gameManagerA2.GetGroupVehicles(gameObject); //Other vehicles in a Group with this vehicle
         _mOtherCars = GameObject.FindGameObjectsWithTag("Player"); //All vehicles
         GameObject groundPlane = GameObject.Find("GroundPlane");
-        _initialCarState = gameObject.transform.Find("Colliders/ColliderBody").transform;
+        _initialCarState = gameObject.transform.Find("Colliders/ColliderBottom").transform;
         
         Collider groundCollider = groundPlane.GetComponent<Collider>();
-        Transform initialCarState = gameObject.transform.Find("Colliders/ColliderBody").transform;
+        Transform initialCarState = gameObject.transform.Find("Colliders/ColliderBottom").transform;
         
         // Note that this array will have "holes" when objects are destroyed
         // But for initial planning they should work
@@ -266,7 +266,7 @@ public class AIP1TrafficCar : Agent
         }
         
         // Gets current car state
-        var carTransform = gameObject.transform.Find("Colliders/ColliderBody").transform;
+        var carTransform = gameObject.transform.Find("Colliders/ColliderBottom").transform;
         
         // Calculates the move
         _controller.PDCalculateMove(carTransform);
@@ -300,17 +300,41 @@ public class AIP1TrafficCar : Agent
             (finalAccel, finalSteering, finalBrake) = voStop.GetAdjustedControls(currentVelocity, 
                 finalSteering, finalBrake, finalAccel);
             
-            (float steerAdjust, float brakeAdjust) = LocalAvoidance.CalculateSeparation(
-                carTransform, this.priority, _mOtherCars, panicRadius: 8f);
-            
-            finalSteering += steerAdjust;
-            finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
-            
-            finalBrake = Mathf.Max(finalBrake, brakeAdjust);
-            if (brakeAdjust > 0.1f) 
+// --- NEW: SIDE-BY-SIDE SWERVE LOGIC ---
+            float swerveSteer = 0f;
+            foreach (var otherCar in _mOtherCars)
             {
-                finalAccel = 0f; 
+                if (otherCar == null || otherCar == this.gameObject) continue;
+                
+                Vector3 toOther = otherCar.transform.position - transform.position;
+                float distance = toOther.magnitude;
+
+                // If the other car is within 5 meters
+                if (distance < 5.0f)
+                {
+                    // Convert other car's position to our local space
+                    // localPos.x is right/left. localPos.z is forward/backward.
+                    Vector3 localPos = transform.InverseTransformPoint(otherCar.transform.position);
+
+                    // If Abs(z) < 3.5f, they are roughly side-by-side (not far ahead or far behind)
+                    if (Mathf.Abs(localPos.z) < 3.5f)
+                    {
+                        // Calculate how aggressively to swerve based on how close they are
+                        float urgency = 1f - (distance / 5.0f);
+
+                        // If they are on our right (localPos.x > 0), steer left (-). If on our left, steer right (+).
+                        float direction = Mathf.Sign(localPos.x); 
+                        
+                        // The 1.5f multiplier determines how violent the swerve is. 
+                        swerveSteer -= direction * urgency * 1.5f; 
+                    }
+                }
             }
+
+            // Apply the swerve on top of the pathfinding steering and clamp it to valid bounds
+            finalSteering += swerveSteer;
+            finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
+            // ---------------------------------------
         }
         
         car.Move(finalSteering, finalAccel, finalBrake, finalHandbrake);
