@@ -24,6 +24,8 @@ public class AIP1TrafficCar : Agent
     public bool drawTargets;
     public bool drawAllCars;
     public bool drawTeamCars;
+    
+    
 
     public float steering;
     public float acceleration;
@@ -42,6 +44,9 @@ public class AIP1TrafficCar : Agent
     private float reverseDuration = 2.0f; // How long to reverse
     private Vector3 _lastPosition; // Used to check if we are actually stuck
     
+    // Staggered start
+    private float _startupDelay;
+    private float _startupTimer = 0f;
     
     private void OnDrawGizmos()
     {
@@ -127,6 +132,9 @@ public class AIP1TrafficCar : Agent
         this.priority = priorityCounter;
         priorityCounter++;
         _maxAcceleration = 5f;// + Random.value;
+        
+        _startupDelay = this.priority * 1.5f;
+        _startupTimer = 0f;
         
         //var swTotal = new Stopwatch();
         //var swLocal = new Stopwatch();
@@ -223,6 +231,19 @@ public class AIP1TrafficCar : Agent
 
         car.Move(steering, acceleration, acceleration, 0f);*/
         
+        _startupTimer += Time.fixedDeltaTime;
+        if (_startupTimer < _startupDelay)
+        {
+            // Keep the car completely stationary
+            car.Move(0f, 0f, 1f, 1f);
+            
+            // We also need to keep updating _lastPosition so the "stuck" reversing logic 
+            // doesn't trigger immediately after the delay finishes.
+            _lastPosition = transform.position; 
+            return;
+        }
+        
+        
         float currentSpeed = (transform.position - _lastPosition).magnitude / Time.fixedDeltaTime;
         Vector3 currentVelocity = (transform.position - _lastPosition) / Time.fixedDeltaTime;
         _lastPosition = transform.position;
@@ -278,6 +299,18 @@ public class AIP1TrafficCar : Agent
             var voStop = new VOStop(carTransform, _mOtherCars);
             (finalAccel, finalSteering, finalBrake) = voStop.GetAdjustedControls(currentVelocity, 
                 finalSteering, finalBrake, finalAccel);
+            
+            (float steerAdjust, float brakeAdjust) = LocalAvoidance.CalculateSeparation(
+                carTransform, this.priority, _mOtherCars, panicRadius: 8f);
+            
+            finalSteering += steerAdjust;
+            finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
+            
+            finalBrake = Mathf.Max(finalBrake, brakeAdjust);
+            if (brakeAdjust > 0.1f) 
+            {
+                finalAccel = 0f; 
+            }
         }
         
         car.Move(finalSteering, finalAccel, finalBrake, finalHandbrake);
