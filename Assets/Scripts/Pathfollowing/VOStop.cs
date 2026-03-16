@@ -20,7 +20,7 @@ namespace Pathfollowing
         // How many seconds into the future we look for collisions
         private const float TimeHorizon = 10f;
         private const float SpaceMargin = 1f; // Extra radius to add to each vehicle to create a safety buffer. Adjust based on your vehicle sizes and desired safety margin.
-        private const float MaxSpeed = 20f;
+        private const float MaxSpeed = 5f;
 
         private readonly Transform _myTransform;
         private readonly GameObject[] _otherCars;
@@ -71,7 +71,12 @@ namespace Pathfollowing
 
             if (shouldStop || currentVelocity.magnitude > MaxSpeed)
             {
-                return (0f, intendedSteer, 1f);
+                if (currentVelocity.magnitude < 0.1f)
+                {
+                    return (0f, intendedBrake, 0f);
+                }
+                
+                return (0f, intendedSteer, -1f);
             }
 
             return (intendedAccel, intendedSteer, intendedBrake);

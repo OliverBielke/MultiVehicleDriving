@@ -11,6 +11,9 @@ namespace Pathfinding
     {
         private readonly List<Vector3> _astarExploredNodes = new();
         
+        private const float ClearanceRadius = 2.5f;     // The radius to check for nearby obstacles (must be > carRadius)
+        private const float NarrowPathPenalty = 10.0f;  // Editable cost penalty added when moving through a narrow path
+
         
         /// <summary>
         /// Run the A* algorithm. 
@@ -29,11 +32,11 @@ namespace Pathfinding
             List<AStarNode> openSet = new();
             HashSet<Vector3> closedSet = new();
 
-            AStarNode startNode = new AStarNode(pos:start, goal:goal);
+            var startNode = new AStarNode(pos:start, goal:goal);
             openSet.Add(startNode);
             
-            int maxIterations = 50000;
-            int iter = 0;
+            const int maxIterations = 50000;
+            var iter = 0;
             
             while (openSet.Count > 0 && iter < maxIterations)
             {
@@ -120,14 +123,31 @@ namespace Pathfinding
             /// <returns>The cost to come to this node from start. </returns>
             public float CostToCome(AStarNode parent)
             {
-                var cost = 0f;
+                var cost = CalculateNarrowPathPenalty();
                 
                 if (parent != null)
                 {
-                    cost = parent.GCost + Vector3.Distance(parent.Position, Position);
+                    cost += parent.GCost + Vector3.Distance(parent.Position, Position);
                 }
                 
                 return cost;
+            }
+            
+            
+            /// <summary>
+            /// Calculates a penalty for being in a narrow path. If there are obstacles within the clearance radius, we add a penalty to the cost to encourage the algorithm to find wider paths when possible.
+            /// </summary>
+            /// <returns>Zero when no obstacle within a radius, the narrow path penalty otherwise. </returns>
+            private float CalculateNarrowPathPenalty()
+            {
+                var obstacleLayer = LayerMask.GetMask("Obstacle");
+                var isNearObstacle = Physics.CheckBox(
+                    Position,
+                    new Vector3(ClearanceRadius, 0.5f, ClearanceRadius), 
+                    Quaternion.identity,
+                    obstacleLayer
+                );
+                return isNearObstacle ? NarrowPathPenalty : 0f;
             }
             
 
