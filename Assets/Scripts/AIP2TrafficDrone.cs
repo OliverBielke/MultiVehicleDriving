@@ -160,14 +160,15 @@ public class AIP2TrafficDrone : Agent
         //(finalH, finalV) = voStop.GetAdjustedDroneControls(currentVelocity:currentVelocity, 
         //    intendedH:finalH, intendedV:finalV, drone:mDrone);
         
-        var multiObstacleAvoidance = new MultiObstacleAvoidance(_initialDroneState, mDrone.max_acceleration);
+        //var multiObstacleAvoidance = new MultiObstacleAvoidance(_initialDroneState, mDrone.max_acceleration);
+        
+        var vo = new VO(vehicleTransform:_initialDroneState, mDrone.max_acceleration);
         
         Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacle"));
         GameObject[] pedestrians = GameObject.FindGameObjectsWithTag("Searcher");
         
-        (finalH, finalV) = multiObstacleAvoidance.GetAdjustedDroneControls(myTransform:_initialDroneState, 
-            currentVelocity:currentVelocity, intendedH:finalH, intendedV:finalV, otherCars:_mOtherVehicles, 
-            staticObstacles:obstacles, pedestrians:pedestrians);
+        (finalH, finalV) = vo.GetSafeAcceleration(myTransform:_initialDroneState, currentVelocity:currentVelocity, 
+            intendedH:finalH, intendedV:finalV, otherDrones:_mOtherVehicles, pedestrians:pedestrians, staticObstacles:obstacles);
         
         // Drones only take 2 variables: Steering (turn) and Acceleration (forward)
         mDrone.Move(finalH, finalV);

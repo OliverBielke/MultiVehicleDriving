@@ -12,12 +12,16 @@ namespace PathFollowing
     {
         //Parameters
         private const float SafetyMargin = 0.5f;            // Strict distance margin (delta)
+        private const float SafetyMarginDrone = 0.6f;       // Stricter margin for drones with pedestrians (omnidirectional)
+        private const float SafetyMarginPedestrian = 0.8f;  // Extra safety margin specifically for pedestrians
         private const float TimeHorizon = 3.0f;           // How far ahead to check for VO (seconds)
         private const float SteerToNeighborPenalty = 10f; // Penalty for steering towards neighbors in the VO penalty function
         private const float SideBySidePenalty = 10f ;     // Penalty for driving side-by-side with neighbors in the VO penalty function
         
         private const float WeightReference = 1.0f;       // Weight for following intended input
         private const float WeightVO = 2.0f;              // Weight for avoiding Velocity Obstacles
+        private const float WeightLateralAvoidance = 5.0f; // Weight for encouraging lateral movement to resolve deadlocks
+        private const float WeightPedestrianVO = 5.0f;    // Extra weight for pedestrian avoidance
         
         private readonly float _pedestrianRadius = 1f; // Approximate radius of a pedestrian
         private readonly float _maxAcceleration;     // Max accel capability (m/s^2), data from previous assignment
@@ -27,6 +31,7 @@ namespace PathFollowing
         
         private int _steerSamples = 7;           // Number of steering angles to sample
         private int _accelSamples = 5;           // Number of acceleration values to sample
+        private int _droneAccelSamples = 9;      // Higher sampling for drone omnidirectional control
         
         //Non-changable
         private readonly float _vehicleRadius;   // Approximate radius of the car
@@ -135,17 +140,20 @@ namespace PathFollowing
             Vector2 intendedInput = new Vector2(intendedH, intendedV);
 
             Vector3 pos = myTransform.position;
+            Vector3 intendedPredictedVelocity = currentVelocity + new Vector3(intendedH, 0, intendedV) * _maxAcceleration * Time.fixedDeltaTime;
+
             float bestCost = float.MaxValue;
             bool foundSafeSolution = false;
+            Vector3 bestPredictedVelocity = Vector3.zero;
 
             // Sample a 2D grid for omnidirectional thrust mapping
-            for (int i = 0; i < _accelSamples; i++)
+            for (int i = 0; i < _droneAccelSamples; i++)
             {
-                float sampledH = Mathf.Lerp(-1f, 1f, (float)i / (_accelSamples - 1));
+                float sampledH = Mathf.Lerp(-1f, 1f, (float)i / (_droneAccelSamples - 1));
                 
-                for (int j = 0; j < _accelSamples; j++)
+                for (int j = 0; j < _droneAccelSamples; j++)
                 {
-                    float sampledV = Mathf.Lerp(-1f, 1f, (float)j / (_accelSamples - 1));
+                    float sampledV = Mathf.Lerp(-1f, 1f, (float)j / (_droneAccelSamples - 1));
                     
                     Vector2 sampledInput = new Vector2(sampledH, sampledV);
                     if (sampledInput.magnitude > 1f) sampledInput.Normalize(); // Keep thrust circular
@@ -158,11 +166,14 @@ namespace PathFollowing
                     if (!IsCBFSafe(pos, myTransform, predictedVelocity, otherCars, staticObstacles, pedestrians))
                         continue;
 
-                    // 3. Compute Objective Cost (Minimize deviation + VO penalty)
+                    // 3. Compute Objective Cost (Minimize deviation + VO penalty + Lateral incentive)
                     float costReference = WeightReference * Mathf.Pow(Vector2.Distance(sampledInput, intendedInput), 2);
                     float costVO = WeightVO * CalculateVOPenalty(pos, predictedVelocity, otherCars, staticObstacles, myTransform, pedestrians);
+                    
+                    // Add lateral movement incentive to break deadlocks when drones are too close
+                    float costLateral = CalculateLateralAvoidanceCost(pos, sampledInput, myTransform, otherCars, pedestrians);
 
-                    float totalCost = costReference + costVO;
+                    float totalCost = costReference + costVO + (WeightLateralAvoidance * costLateral);
 
                     // 4. Keep the control with the minimum cost
                     if (totalCost < bestCost)
@@ -170,6 +181,7 @@ namespace PathFollowing
                         bestCost = totalCost;
                         safeH = sampledInput.x;
                         safeV = sampledInput.y;
+                        bestPredictedVelocity = predictedVelocity;
                         foundSafeSolution = true;
                     }
                 }
@@ -187,6 +199,10 @@ namespace PathFollowing
                 Vector3 stoppingDir = -currentVelocity.normalized;
                 return (stoppingDir.x, stoppingDir.z); 
             }
+
+            // Visualization
+            Debug.DrawLine(pos, pos + intendedPredictedVelocity, Color.yellow, 0.1f);
+            Debug.DrawLine(pos, pos + bestPredictedVelocity, Color.green, 0.1f);
 
             return (safeH, safeV);
         }
@@ -235,6 +251,7 @@ namespace PathFollowing
                 if (hc < 0)
                 {
                     //Debug.Log("Predicted collision with other car");
+                    Debug.DrawLine(myPos, car.transform.position, Color.red, 0.1f);
                     return false; // This control breaks the safety barrier
                 }
             }
@@ -267,9 +284,12 @@ namespace PathFollowing
                     Vector3 dir = relativePos.normalized;
 
                     float relSpeedProjected = Mathf.Min(0, Vector3.Dot(relativeVel, dir));
-                    float hc = distance - SafetyMargin - (Mathf.Pow(relSpeedProjected, 2) / (2f * _maxDeceleration));
+                    float hc = distance - SafetyMarginPedestrian - (Mathf.Pow(relSpeedProjected, 2) / (2f * _maxDeceleration));
 
-                    if (hc < 0) return false;
+                    if (hc < 0) {
+                        Debug.DrawLine(myPos, ped.transform.position, Color.red, 0.1f);
+                        return false;
+                    }
                 }
             }
             
@@ -299,6 +319,7 @@ namespace PathFollowing
                 if (hc < 0)
                 {
                     //Debug.unityLogger.Log("Predicted collision with static obstacle");
+                    Debug.DrawLine(myPos, closestPoint, Color.red, 0.1f);
                     return false;
                 }
             }
@@ -384,8 +405,8 @@ namespace PathFollowing
                     float ttc = ComputeTimeToCollision(relativePos, relativeVel, _vehicleRadius + _pedestrianRadius);
                     if (ttc > 0 && ttc < TimeHorizon)
                     {
-                        // Pedestrians act similarly to cars in VO, just with a different collision radius
-                        totalPenalty += 1.0f / (ttc + 0.1f); 
+                        // Pedestrians get extra weight - they are vulnerable and must be prioritized
+                        totalPenalty += WeightPedestrianVO * (1.0f / (ttc + 0.1f));
                     }
                 }
             }
@@ -450,6 +471,79 @@ namespace PathFollowing
     
             // Simple physics: Time = Distance / Speed
             return distanceToWall / closingSpeed;
+        }
+
+        /// <summary>
+        /// Calculates cost to encourage lateral movement when drones are too close.
+        /// This helps break deadlocks by rewarding sideways or diagonal movement.
+        /// </summary>
+        private float CalculateLateralAvoidanceCost(Vector3 myPos, Vector2 sampledInput, Transform myTransform, GameObject[] otherCars, GameObject[] pedestrians)
+        {
+            float lateralCost = 0f;
+
+            // Check proximity to other drones
+            if (otherCars != null)
+            {
+                foreach (var car in otherCars)
+                {
+                    Rigidbody myRb = myTransform.GetComponentInParent<Rigidbody>();
+                    Rigidbody otherRb = car.GetComponent<Rigidbody>();
+                    if (myRb != null && myRb == otherRb) continue;
+
+                    Vector3 relativePos = car.transform.position - myPos;
+                    float distance = relativePos.magnitude;
+
+                    // Only care about nearby drones
+                    if (distance < _vehicleRadius * 10f && distance > 0.1f)
+                    {
+                        // Convert input to direction (2D horizontal plane)
+                        Vector3 moveDirection = new Vector3(sampledInput.x, 0, sampledInput.y).normalized;
+                        Vector3 dirToOther = relativePos.normalized;
+
+                        // Calculate how much the sampled input moves laterally relative to the other drone
+                        float headOnAlignment = Vector3.Dot(moveDirection, dirToOther);
+
+                        // Reward lateral movement (perpendicular to head-on direction)
+                        // If headOnAlignment is 0, we're moving perpendicular (good!)
+                        // If headOnAlignment is 1, we're moving directly at them (bad!)
+                        float lateralComponent = 1f - Mathf.Abs(headOnAlignment);
+
+                        // Stronger incentive for closer drones
+                        float proximityWeight = 1f / (distance + 0.5f);
+                        lateralCost -= lateralComponent * proximityWeight; // Negative because we want to minimize cost
+                    }
+                }
+            }
+
+            // Similar check for pedestrians
+            if (pedestrians != null)
+            {
+                foreach (var ped in pedestrians)
+                {
+                    Vector3 relativePos = ped.transform.position - myPos;
+                    float distance = relativePos.magnitude;
+
+                    // Larger detection range for pedestrians since they're vulnerable
+                    if (distance < _vehicleRadius * 12f && distance > 0.1f)
+                    {
+                        Vector3 moveDirection = new Vector3(sampledInput.x, 0, sampledInput.y);
+                        if (moveDirection.magnitude > 0.01f) moveDirection.Normalize();
+                        else moveDirection = Vector3.zero;
+                        
+                        Vector3 dirToOther = relativePos.normalized;
+
+                        float headOnAlignment = moveDirection.magnitude > 0.01f ? Vector3.Dot(moveDirection, dirToOther) : 0f;
+                        float lateralComponent = 1f - Mathf.Abs(headOnAlignment);
+
+                        // Stronger incentive for pedestrians
+                        float proximityWeight = 1.5f / (distance + 0.2f);
+                        lateralCost -= lateralComponent * proximityWeight;
+                    }
+                }
+            }
+
+            // Return positive cost (minimize it = prefer lateral movement)
+            return -lateralCost;
         }
 
     }
