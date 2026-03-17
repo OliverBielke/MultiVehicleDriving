@@ -165,7 +165,7 @@ public class AIP2TrafficDrone : Agent
         }*/
         
         // Calculates the move
-        _droneControlling.PDCalculateMove(_initialDroneState);
+        _droneControlling.PDCalculateMove(droneTransform:_initialDroneState, drone:mDrone);
         
         var finalH = _droneControlling.h;
         var finalV = _droneControlling.v;

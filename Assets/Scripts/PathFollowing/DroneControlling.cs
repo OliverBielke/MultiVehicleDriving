@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using PathFinding;
 using System;
+using Scripts.Vehicle;
 
 namespace PathFollowing
 {
@@ -12,8 +13,8 @@ namespace PathFollowing
         private const float K_D_POSITION = 1.5f;
         private const float K_P_VELOCITY = 10f;
         private const float K_D_VELOCITY = 0f;
-        private const float MAX_DRONE_ACCEL = 15f;
-        private const float MAX_DRONE_SPEED = 15f;
+        private float MAX_DRONE_ACCEL = 15f;
+        private float MAX_DRONE_SPEED = 15f;
         
         // Outputs
         public float h { get; set; }  // Horizontal acceleration command [-1, 1]
@@ -38,22 +39,25 @@ namespace PathFollowing
         {
             this.waypoints = waypoints;
             this.goal = goal;
-            this.prevDronePos = droneState.position;  
-            this.currDroneState = droneState;       
-            this.bestStartIndex = 0;
-            this.targetDistance = 5f;
-            this.lastVelError = Vector2.zero;
-            this.lastPosError = Vector2.zero;
-            this.h = 0f;
-            this.v = 0f;
-            this.targetSpeeds = GenerateTargetSpeeds(waypoints);
+            prevDronePos = droneState.position;  
+            currDroneState = droneState;       
+            bestStartIndex = 0;
+            targetDistance = 5f;
+            lastVelError = Vector2.zero;
+            lastPosError = Vector2.zero;
+            h = 0f;
+            v = 0f;
+            targetSpeeds = GenerateTargetSpeeds(waypoints);
         }
         
-        public void PDCalculateMove(Transform droneTransform)
+        public void PDCalculateMove(Transform droneTransform, DroneController drone)
         {
-            this.currDroneState = droneTransform;
+            currDroneState = droneTransform;
             
-            this.UpdateTargetDistance();
+            MAX_DRONE_ACCEL = drone.max_acceleration;
+            MAX_DRONE_SPEED = drone.max_speed;
+            
+            UpdateTargetDistance();
     
             Vector2 targetPoint = GetTargetPoint(droneTransform.position);
             Vector2 currentPos2D = new Vector2(droneTransform.position.x, droneTransform.position.z);
@@ -81,12 +85,12 @@ namespace PathFollowing
             Debug.Log("Target Speed: " + targetSpeed);
             Debug.Log("Current Speed" + currentVel.magnitude);
 
-            this.h = Mathf.Clamp(total.x / MAX_DRONE_ACCEL, -1f, 1f);
-            this.v = Mathf.Clamp(total.y / MAX_DRONE_ACCEL, -1f, 1f);
+            h = Mathf.Clamp(total.x / MAX_DRONE_ACCEL, -1f, 1f);
+            v = Mathf.Clamp(total.y / MAX_DRONE_ACCEL, -1f, 1f);
 
-            this.lastVelError = velocityError;
-            this.lastPosError = positionError;
-            this.prevDronePos = droneTransform.position;
+            lastVelError = velocityError;
+            lastPosError = positionError;
+            prevDronePos = droneTransform.position;
         }
         
         private float GetMinTargetSpeed(int index, List<Node> path)
@@ -124,7 +128,7 @@ namespace PathFollowing
             return targetSpeed;
         }
         
-        public static List<float> GenerateTargetSpeeds(List<Node> path)
+        public List<float> GenerateTargetSpeeds(List<Node> path)
         {
             // Kapania, Subosits, Gerdes "A Sequential Two-Step Algorithm for Fast Generation of Vehicle Racing Trajectories"
             
