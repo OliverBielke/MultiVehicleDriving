@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using Scripts.Vehicle;
 
 namespace PathFollowing
 {
@@ -94,7 +95,8 @@ namespace PathFollowing
         public (float finalH, float finalV) GetAdjustedDroneControls(
             Vector3 currentVelocity,
             float intendedH,
-            float intendedV
+            float intendedV, 
+            DroneController drone
         )
         {
             var egoNodes = GetVehicleNodes(_myTransform, currentVelocity);
@@ -121,7 +123,7 @@ namespace PathFollowing
                 }
                 
                 // Active Braking: Apply thrust in the exact opposite direction of our velocity
-                Vector3 stoppingDir = -currentVelocity.normalized;
+                Vector3 stoppingDir = -currentVelocity.normalized * drone.max_acceleration;
                 return (stoppingDir.x, stoppingDir.z); 
             }
 
@@ -133,7 +135,6 @@ namespace PathFollowing
         /// <summary>
         /// Get the states of all surrounding vehicles based on the provided radius. This assumes all vehicles are circles with the same radius for simplicity.
         /// </summary>
-        /// <param name="radius">Radius of the cars. </param>
         /// <returns>A list of all surrounding vehicle states. </returns>
         private List<VehicleState> GetSurroundingVehicleNodes()
         {
@@ -191,8 +192,8 @@ namespace PathFollowing
             else
             {
                 // Fallback for drones (assuming SphereCollider or roughly circular)
-                var sphereCol = vehicleTransform.GetComponent<SphereCollider>();
-                halfWidth = sphereCol != null ? (sphereCol.radius * vehicleTransform.lossyScale.x) : 1f;
+                var capsuleCol = vehicleTransform.GetComponent<CapsuleCollider>();
+                halfWidth = capsuleCol != null ? (capsuleCol.radius * vehicleTransform.lossyScale.x) : 1f;
                 halfLength = halfWidth; 
             }
 
@@ -237,8 +238,6 @@ namespace PathFollowing
         private static bool EvaluateShouldStop(VehicleState thisVehicle, List<VehicleState> surroundingVehicles)
         { 
             
-            var forwardDir = thisVehicle.Forward;
-
             foreach (var obstacle in surroundingVehicles)
             {
                 // Calculate relative position.
@@ -259,36 +258,6 @@ namespace PathFollowing
                     DrawDebugVO(thisVehicle, relativePosition, relativeVelocity, combinedRadius, Color.cyan);
                     continue;
                 }
-                
-                /*// Dot Product to check if the obstacle is in front of us
-                var dotProduct = Vector2.Dot(forwardDir, relativePosition);
-                var isInFront = dotProduct > 0;
-
-                // We never brake for cars behind us; it is their responsibility to brake for us.
-                if (dotProduct < 0)
-                {
-                    continue; // Skip this car
-                }
-                
-                // Check if we are traveling in the same general direction
-                // (A dot product > 0.5 roughly means they are pointing within 60 degrees of each other)
-                var alignment = Vector2.Dot(thisVehicle.Forward, obstacle.Forward);
-                var isSameDirection = alignment > 0.5f;
-
-                // 2D Cross Product to check if the obstacle is to our right
-                var crossProduct = (forwardDir.x * relativePosition.y) - (forwardDir.y * relativePosition.x);
-                var isToRight = crossProduct < 0;
-
-                // The absolute value of the cross product is the lateral distance to the obstacle.
-                var lateralOffset = Mathf.Abs(crossProduct);
-                var isDirectlyInFront = lateralOffset <= combinedRadius;
-
-                // NEW LOGIC: Right-of-way ("Yield to the right") should ONLY apply at intersections!
-                // If we are driving the same direction, we MUST check for collisions, regardless of what side they are on.
-                if (!isSameDirection && !isToRight && !isDirectlyInFront) 
-                {
-                    continue; 
-                }*/
 
                 // Calculate Time to Collision (TTC)
                 // Starting from the equation ||V*t - P|| = R, we derive a quadratic formula to solve for t (time until collision).
@@ -354,13 +323,12 @@ namespace PathFollowing
             {
                 return true; // We have right of way over cars behind us
             }
-
+            
             // 2D Cross Product to check if the obstacle is to our right
             var crossProduct = (thisVehicle.Forward.x * relativePosition.y) - (thisVehicle.Forward.y * relativePosition.x);
             var isToRight = crossProduct < 0;
 
             return isToRight; // We have right of way if the other car is to our right
-            
         }
         
         

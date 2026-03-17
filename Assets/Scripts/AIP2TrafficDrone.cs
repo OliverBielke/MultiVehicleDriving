@@ -182,7 +182,7 @@ public class AIP2TrafficDrone : Agent
             
         // Re-adjust controls to avoid collisions
         (finalH, finalV) = voStop.GetAdjustedDroneControls(currentVelocity:currentVelocity, 
-            intendedH:finalH, intendedV:finalV);
+            intendedH:finalH, intendedV:finalV, drone:mDrone);
         
         
         // Drones only take 2 variables: Steering (turn) and Acceleration (forward)
