@@ -143,26 +143,9 @@ public class AIP2TrafficDrone : Agent
             return;
         }
         
-        var currentSpeed = (transform.position - _lastPosition).magnitude / Time.fixedDeltaTime;
         Vector3 currentVelocity = (transform.position - _lastPosition) / Time.fixedDeltaTime;
         _lastPosition = transform.position;
-
-        /*
-        // Stuck logic
-        if (currentSpeed < 0.1f && !_droneControlling.isReversing && !_droneControlling.HasReachedGoal) 
-        {
-            stuckTimer += Time.fixedDeltaTime;
-            if (stuckTimer > stuckThreshold)
-            {
-                _droneControlling.isReversing = true;
-                _droneControlling.reverseTimer = reverseDuration;
-                stuckTimer = 0f;
-            }
-        }
-        else if (currentSpeed >= 0.5f || stuckTimer > 10f) 
-        {
-            stuckTimer = 0f; 
-        }*/
+        
         
         // Calculates the move
         _droneControlling.PDCalculateMove(droneTransform:_initialDroneState, drone:mDrone);
@@ -170,20 +153,21 @@ public class AIP2TrafficDrone : Agent
         var finalH = _droneControlling.h;
         var finalV = _droneControlling.v;
         
-        /*
-        if (_droneControlling.HasReachedGoal)
-        {
-            // Force a complete stop
-            finalSteering = 0f;
-            finalAccel = 0f;
-        }*/
         
-        var voStop = new VOStop(_initialDroneState, _mOtherVehicles);
+        //var voStop = new VOStop(_initialDroneState, _mOtherVehicles);
             
         // Re-adjust controls to avoid collisions
-        (finalH, finalV) = voStop.GetAdjustedDroneControls(currentVelocity:currentVelocity, 
-            intendedH:finalH, intendedV:finalV, drone:mDrone);
+        //(finalH, finalV) = voStop.GetAdjustedDroneControls(currentVelocity:currentVelocity, 
+        //    intendedH:finalH, intendedV:finalV, drone:mDrone);
         
+        var multiObstacleAvoidance = new MultiObstacleAvoidance(_initialDroneState, mDrone.max_acceleration);
+        
+        Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacle"));
+        GameObject[] pedestrians = GameObject.FindGameObjectsWithTag("Searcher");
+        
+        (finalH, finalV) = multiObstacleAvoidance.GetAdjustedDroneControls(myTransform:_initialDroneState, 
+            currentVelocity:currentVelocity, intendedH:finalH, intendedV:finalV, otherCars:_mOtherVehicles, 
+            staticObstacles:obstacles, pedestrians:pedestrians);
         
         // Drones only take 2 variables: Steering (turn) and Acceleration (forward)
         mDrone.Move(finalH, finalV);

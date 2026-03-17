@@ -82,8 +82,8 @@ namespace PathFollowing
             
             Vector2 total = velForce + posForce;
             
-            Debug.Log("Target Speed: " + targetSpeed);
-            Debug.Log("Current Speed" + currentVel.magnitude);
+            //Debug.Log("Target Speed: " + targetSpeed);
+            //Debug.Log("Current Speed" + currentVel.magnitude);
 
             h = Mathf.Clamp(total.x / MAX_DRONE_ACCEL, -1f, 1f);
             v = Mathf.Clamp(total.y / MAX_DRONE_ACCEL, -1f, 1f);

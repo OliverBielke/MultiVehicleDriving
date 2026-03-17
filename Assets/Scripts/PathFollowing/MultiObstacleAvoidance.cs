@@ -6,6 +6,7 @@ namespace PathFollowing
     /// <summary>
     /// Obstacle avoidance from the paper "Multi-Agent Obstacle Avoidance using
     /// Velocity Obstacles and Control Barrier Functions"
+    /// /// Supports both Car and Drone vehicles.
     /// </summary>
     public class MultiObstacleAvoidance
     {
@@ -18,6 +19,7 @@ namespace PathFollowing
         private const float WeightReference = 1.0f;       // Weight for following intended input
         private const float WeightVO = 2.0f;              // Weight for avoiding Velocity Obstacles
         
+        private readonly float _pedestrianRadius = 1f; // Approximate radius of a pedestrian
         private readonly float _maxAcceleration;     // Max accel capability (m/s^2), data from previous assignment
         private readonly float _maxDeceleration = 5f;     // Max braking capability (m/s^2), data from previous assignment
         private readonly float _maxSteeringAngle = 25f;   // Max wheel turn in degrees
@@ -38,7 +40,8 @@ namespace PathFollowing
         }
         
         public (float newAccel, float newSteer, float newBrake) getAdjustedControls(Transform myTransform, Vector3 currentVelocity, 
-            float intendedSteer, float intendedAccel, float intendedBrake, GameObject[] otherCars, Collider[] staticObstacles)
+            float intendedSteer, float intendedAccel, float intendedBrake, GameObject[] otherCars, Collider[] staticObstacles, 
+            GameObject[] pedestrians = null)
         {
             //Initialize the outputs
             float safeAccel;
@@ -80,7 +83,7 @@ namespace PathFollowing
                     Vector3 predictedVelocity = predictedForward * predictedSpeed;
 
                     // 2. Check strict CBF Safety (Hard Constraint)
-                    if (!IsCBFSafe(pos, myTransform, predictedVelocity, otherCars, staticObstacles))
+                    if (!IsCBFSafe(pos, myTransform, predictedVelocity, otherCars, staticObstacles, pedestrians))
                         continue; // Discard this control input completely
 
                     // 3. Compute Objective Cost (Minimize deviation + VO penalty)
@@ -88,7 +91,7 @@ namespace PathFollowing
                         Mathf.Pow(sampledSteer - intendedSteer, 2) + 
                         Mathf.Pow((sampledAccelValue - refAccelValue) / _maxAcceleration, 2));
 
-                    float costVO = WeightVO * CalculateVOPenalty(pos, predictedVelocity, otherCars, staticObstacles, myTransform);
+                    float costVO = WeightVO * CalculateVOPenalty(pos, predictedVelocity, otherCars, staticObstacles, myTransform, pedestrians);
 
                     float totalCost = costReference + costVO;
 
@@ -121,11 +124,80 @@ namespace PathFollowing
             return (safeAccel, safeSteer, safeBrake);
         }
         
+        
+        public (float finalH, float finalV) GetAdjustedDroneControls(Transform myTransform, Vector3 currentVelocity, 
+            float intendedH, float intendedV, GameObject[] otherCars, Collider[] staticObstacles, GameObject[] pedestrians)
+        {
+            float safeH = 0f;
+            float safeV = 0f;
+
+            
+            Vector2 intendedInput = new Vector2(intendedH, intendedV);
+
+            Vector3 pos = myTransform.position;
+            float bestCost = float.MaxValue;
+            bool foundSafeSolution = false;
+
+            // Sample a 2D grid for omnidirectional thrust mapping
+            for (int i = 0; i < _accelSamples; i++)
+            {
+                float sampledH = Mathf.Lerp(-1f, 1f, (float)i / (_accelSamples - 1));
+                
+                for (int j = 0; j < _accelSamples; j++)
+                {
+                    float sampledV = Mathf.Lerp(-1f, 1f, (float)j / (_accelSamples - 1));
+                    
+                    Vector2 sampledInput = new Vector2(sampledH, sampledV);
+                    if (sampledInput.magnitude > 1f) sampledInput.Normalize(); // Keep thrust circular
+
+                    // 1. Predict new velocity vector for drone (omnidirectional acceleration)
+                    Vector3 accelVector = new Vector3(sampledInput.x, 0, sampledInput.y) * _maxAcceleration;
+                    Vector3 predictedVelocity = currentVelocity + (accelVector * Time.fixedDeltaTime);
+
+                    // 2. Check strict CBF Safety (Hard Constraint)
+                    if (!IsCBFSafe(pos, myTransform, predictedVelocity, otherCars, staticObstacles, pedestrians))
+                        continue;
+
+                    // 3. Compute Objective Cost (Minimize deviation + VO penalty)
+                    float costReference = WeightReference * Mathf.Pow(Vector2.Distance(sampledInput, intendedInput), 2);
+                    float costVO = WeightVO * CalculateVOPenalty(pos, predictedVelocity, otherCars, staticObstacles, myTransform, pedestrians);
+
+                    float totalCost = costReference + costVO;
+
+                    // 4. Keep the control with the minimum cost
+                    if (totalCost < bestCost)
+                    {
+                        bestCost = totalCost;
+                        safeH = sampledInput.x;
+                        safeV = sampledInput.y;
+                        foundSafeSolution = true;
+                    }
+                }
+            }
+
+            // 5. Fallback: Active Braking (If mathematically boxed in)
+            if (!foundSafeSolution)
+            {
+                if (currentVelocity.magnitude < 0.1f)
+                {
+                    return (0f, 0f); // Just hover
+                }
+                
+                // Active Braking: Apply thrust in the exact opposite direction of our velocity
+                Vector3 stoppingDir = -currentVelocity.normalized;
+                return (stoppingDir.x, stoppingDir.z); 
+            }
+
+            return (safeH, safeV);
+        }
+        
+        
         /// <summary>
         /// Strict safety check using Control Barrier Function logic.
         /// Ensures we have enough distance to break before collision.
         /// </summary>
-        private bool IsCBFSafe(Vector3 myPos, Transform myTransform, Vector3 predictedVelocity, GameObject[] otherCars, Collider[] staticObstacles)
+        private bool IsCBFSafe(Vector3 myPos, Transform myTransform, Vector3 predictedVelocity, GameObject[] otherCars, Collider[] staticObstacles, 
+            GameObject[] pedestrians)
         {
             // 1. Check against other agents
             foreach (var car in otherCars)
@@ -167,6 +239,41 @@ namespace PathFollowing
                 }
             }
             
+            
+            // 2. Check against pedestrians
+            if (pedestrians != null)
+            {
+                foreach (var ped in pedestrians)
+                {
+                    Vector3 relativePos = ped.transform.position - myPos;
+                    Vector3 pedVelocity = Vector3.zero;
+
+                    // Extract velocity from ObstacleAI
+                    var ai = ped.GetComponent<ObstacleAI>(); 
+                    if (ai != null)
+                    {
+                        pedVelocity = ai.direction.normalized * ai.speed;
+                    }
+                    else
+                    {
+                        Rigidbody pedRb = ped.GetComponent<Rigidbody>();
+                        if (pedRb != null) pedVelocity = pedRb.linearVelocity;
+                    }
+
+                    Vector3 relativeVel = pedVelocity - predictedVelocity;
+        
+                    // Drone radius + Pedestrian radius
+                    float distance = relativePos.magnitude - (_vehicleRadius + _pedestrianRadius);
+                    Vector3 dir = relativePos.normalized;
+
+                    float relSpeedProjected = Mathf.Min(0, Vector3.Dot(relativeVel, dir));
+                    float hc = distance - SafetyMargin - (Mathf.Pow(relSpeedProjected, 2) / (2f * _maxDeceleration));
+
+                    if (hc < 0) return false;
+                }
+            }
+            
+            
             // 2. Check against static obstacles (simplified as spheres)
             foreach (var obs in staticObstacles)
             {
@@ -203,7 +310,7 @@ namespace PathFollowing
         /// Calculates the soft VO penalty (Slack Variable equivalent in the paper's objective function).
         /// </summary>
         private float CalculateVOPenalty(Vector3 myPos, Vector3 predictedVelocity, GameObject[] otherCars, Collider[] staticObstacles,
-            Transform myTransform)
+            Transform myTransform, GameObject[] pedestrians)
         {
             float totalPenalty = 0f;
 
@@ -256,7 +363,33 @@ namespace PathFollowing
                     totalPenalty += 1.0f / (ttc + 0.1f); 
                 }
             }
+            
+            // VO Penalty for Pedestrians
+            if (pedestrians != null)
+            {
+                foreach (var ped in pedestrians)
+                {
+                    Vector3 pedVelocity = Vector3.zero;
+                    var ai = ped.GetComponent<ObstacleAI>(); 
+                    if (ai != null) pedVelocity = ai.direction.normalized * ai.speed;
+                    else
+                    {
+                        Rigidbody pedRb = ped.GetComponent<Rigidbody>();
+                        if (pedRb != null) pedVelocity = pedRb.linearVelocity;
+                    }
 
+                    Vector3 relativeVel = predictedVelocity - pedVelocity;
+                    Vector3 relativePos = ped.transform.position - myPos;
+
+                    float ttc = ComputeTimeToCollision(relativePos, relativeVel, _vehicleRadius + _pedestrianRadius);
+                    if (ttc > 0 && ttc < TimeHorizon)
+                    {
+                        // Pedestrians act similarly to cars in VO, just with a different collision radius
+                        totalPenalty += 1.0f / (ttc + 0.1f); 
+                    }
+                }
+            }
+            
             // Calculate time-to-collision for static obstacles
             foreach (var obs in staticObstacles)
             {
