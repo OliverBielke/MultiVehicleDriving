@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using UnityEngine;
 using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
-using Pathfinding; //Our pathfinding namespace
+using PathFinding; //Our pathfinding namespace
 
-namespace Pathfollowing
+namespace PathFollowing
 {
-    public class Controller
+    public class CarControlling
     {
         private const float K_P_STEERING = 0.6f;
         private const float K_D_STEERING = 0.3f;
@@ -27,7 +27,7 @@ namespace Pathfollowing
         public bool HasReachedGoal = false;
         public float stoppingDistance = 3f; // Adjust based on the size of your car/goal
 
-        public Controller(List<Node> waypoints, Vector3 goal, Transform carState)
+        public CarControlling(List<Node> waypoints, Vector3 goal, Transform carState)
         {
             this.steering = 0f;
             this.acceleration = 0.5f;
@@ -87,14 +87,14 @@ namespace Pathfollowing
             Vector3 dirToTarget = (targetPosition - carTransform.position).normalized;
 
             // Calculate angle to target, positive = target is to the right
-            float angleToTarget = Vector3.SignedAngle(carTransform.forward, dirToTarget, Vector3.up);
+            var angleToTarget = Vector3.SignedAngle(carTransform.forward, dirToTarget, Vector3.up);
 
             // Invert steering
-            this.steering = angleToTarget > 0 ? -1f : 1f;
+            steering = angleToTarget > 0 ? -1f : 1f;
             
-            this.acceleration = 0f; 
-            this.footbrake = -1f;
-            this.handbrake = 0f;
+            acceleration = 0f; 
+            footbrake = -1f;
+            handbrake = 0f;
         }
 
         private void StanleyCalculateSteer()
@@ -122,12 +122,12 @@ namespace Pathfollowing
             float currentRotationDeriv = Mathf.DeltaAngle(this.currCarState.eulerAngles.y, this.prevCarState.eulerAngles.y)/Time.fixedDeltaTime;
 
             float damping = 0.5f;
-            this.steering = stanleySteer + damping*currentRotationDeriv;
+            steering = stanleySteer + damping*currentRotationDeriv;
         }
 
         public void PDCalculateMove(Transform carTransform)
         {
-            this.currCarState = carTransform;
+            currCarState = carTransform;
             
             // Check if we reached the end before doing any calculations
             if (CheckGoalReached()) return;
@@ -135,22 +135,22 @@ namespace Pathfollowing
             if (isReversing) //if we should reverse instead
             {
                 PerformReverse(carTransform);
-                this.prevCarPos = carTransform.position;
-                this.prevCarState = carTransform;
+                prevCarPos = carTransform.position;
+                prevCarState = carTransform;
                 return;
             }
             // Effectively two seperate PD Controllers
             UpdateTargetDistance();
             PDCalculateSteer();
             CalculateAcceleration();
-            this.prevCarPos = carTransform.position;
-            this.prevCarState = carTransform;
+            prevCarPos = carTransform.position;
+            prevCarState = carTransform;
         }
 
         private void UpdateTargetDistance()
         {
             float currentSpeed = Vector3.Distance(this.currCarState.position, this.prevCarPos) / Time.fixedDeltaTime;
-            this.targetDistance = Mathf.Clamp(currentSpeed / 10, 5, 20);
+            targetDistance = Mathf.Clamp(currentSpeed / 10, 5, 20);
         }
 
         private void CalculateAcceleration()

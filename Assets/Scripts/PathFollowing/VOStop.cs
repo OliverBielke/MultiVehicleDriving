@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-namespace Pathfollowing
+namespace PathFollowing
 {
 
     /// <summary>
@@ -83,6 +83,53 @@ namespace Pathfollowing
         }
 
         
+        
+        /// <summary>
+        /// Adjusts intended controls for a drone (omnidirectional) based on Velocity Obstacles.
+        /// </summary>
+        /// <param name="currentVelocity">The current velocity of the drone.</param>
+        /// <param name="intendedH">The intended horizontal input (X-axis).</param>
+        /// <param name="intendedV">The intended vertical input (Z-axis).</param>
+        /// <returns>Adjusted controls as a tuple: (finalH, finalV).</returns>
+        public (float finalH, float finalV) GetAdjustedDroneControls(
+            Vector3 currentVelocity,
+            float intendedH,
+            float intendedV
+        )
+        {
+            var egoNodes = GetVehicleNodes(_myTransform, currentVelocity);
+            var surroundingNodes = GetSurroundingVehicleNodes();
+
+            bool shouldStop = false;
+
+            // Check for collisions
+            foreach (var egoNode in egoNodes)
+            {
+                if (EvaluateShouldStop(egoNode, surroundingNodes))
+                {
+                    shouldStop = true;
+                    break;
+                }
+            }
+
+            if (shouldStop)
+            {
+                // If we are already moving very slowly, just hover (0 input)
+                if (currentVelocity.magnitude < 0.1f)
+                {
+                    return (0f, 0f);
+                }
+                
+                // Active Braking: Apply thrust in the exact opposite direction of our velocity
+                Vector3 stoppingDir = -currentVelocity.normalized;
+                return (stoppingDir.x, stoppingDir.z); 
+            }
+
+            // Path is clear, proceed with intended inputs
+            return (intendedH, intendedV);
+        }
+        
+        
         /// <summary>
         /// Get the states of all surrounding vehicles based on the provided radius. This assumes all vehicles are circles with the same radius for simplicity.
         /// </summary>
@@ -118,7 +165,17 @@ namespace Pathfollowing
         {
             var nodes = new List<VehicleState>();
             var vel2D = new Vector2(currentVelocity.x, currentVelocity.z);
-            var forward2D = new Vector2(vehicleTransform.forward.x, vehicleTransform.forward.z).normalized;
+            
+            Vector2 forward2D;
+            if (currentVelocity.sqrMagnitude > 0.1f)
+            {
+                forward2D = vel2D.normalized; //Velocity direction as forward direction
+            }
+            else
+            {
+                forward2D = new Vector2(vehicleTransform.forward.x, vehicleTransform.forward.z).normalized; //Fallback to transform forward if we are nearly stationary
+            }
+        
             var pos2D = new Vector2(vehicleTransform.position.x, vehicleTransform.position.z);
 
             // Get the local dimensions (avoids the world-space rotation bounds bug)

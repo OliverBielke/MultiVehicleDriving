@@ -4,9 +4,8 @@ using FormationGame;
 using Imported.StandardAssets.Vehicles.Car.Scripts;
 using Scripts.Game;
 using UnityEngine;
-using Pathfinding;
-using Pathfollowing;
-using System.Diagnostics;
+using PathFinding;
+using PathFollowing;
 using Debug = UnityEngine.Debug;
 
 [RequireComponent(typeof(CarController))]
@@ -33,7 +32,7 @@ public class AIP1TrafficCar : Agent
     public List<GameObject> teamVehicles;
 
     private Transform _initialCarState;
-    private Controller _controller;
+    private CarControlling _carControlling;
     private List<Node> _waypoints;
     
     // For reversal:
@@ -87,16 +86,16 @@ public class AIP1TrafficCar : Agent
             Gizmos.DrawSphere(lastPos, 0.5f);
         }
 
-        if (_controller != null)
+        if (_carControlling != null)
         {
             Gizmos.color = Color.yellow;
             Gizmos.DrawSphere(
-                new Vector3(_controller.closestPoint.x, _initialCarState.position.y,
-                    _controller.closestPoint.y), 0.5f);
+                new Vector3(_carControlling.closestPoint.x, _initialCarState.position.y,
+                    _carControlling.closestPoint.y), 0.5f);
             Gizmos.color = Color.blue;
             Gizmos.DrawSphere(
-                new Vector3(_controller.targetPoint.x, _initialCarState.position.y,
-                    _controller.targetPoint.y), 0.5f);
+                new Vector3(_carControlling.targetPoint.x, _initialCarState.position.y,
+                    _carControlling.targetPoint.y), 0.5f);
         }
 
 
@@ -205,8 +204,8 @@ public class AIP1TrafficCar : Agent
         _lastPosition = transform.position; //For reversal
         
         // Creates the PD Controller
-        _controller = new Controller(nodes, goalPos, initialCarState);
-        _controller.priority = this.priority;
+        _carControlling = new CarControlling(nodes, goalPos, initialCarState);
+        _carControlling.priority = this.priority;
         //swLocal.Stop();
         //Debug.Log($"Smoothing and controller setup time: {swLocal.ElapsedMilliseconds} ms");
 
@@ -215,21 +214,6 @@ public class AIP1TrafficCar : Agent
 
     public override void Step()
     {
-        // Execute your path and collision checking here
-        // ...
-
-        // Feel free to refer to any examples from previous assignments.
-
-        //Example of cars moving into the centre of the field.
-        /*Vector3 avg_pos = _mOtherCars.Aggregate(Vector3.zero, (sum, car) => sum + car.transform.position) / _mOtherCars.Length;
-
-
-        Vector3 goal_pos = targetObjects[0].transform.position;
-        
-        (steering, acceleration) = ControlsTowardsPoint(avg_pos);
-        (steering, acceleration) = ControlsTowardsPoint(goal_pos);
-
-        car.Move(steering, acceleration, acceleration, 0f);*/
         
         _startupTimer += Time.fixedDeltaTime;
         if (_startupTimer < _startupDelay)
@@ -249,14 +233,14 @@ public class AIP1TrafficCar : Agent
         _lastPosition = transform.position;
 
         // if we are moving slow AND not already reversing
-        if (currentSpeed < 0.1f && !_controller.isReversing && !_controller.HasReachedGoal) 
+        if (currentSpeed < 0.1f && !_carControlling.isReversing && !_carControlling.HasReachedGoal) 
         {
             stuckTimer += Time.fixedDeltaTime;
             if (stuckTimer > stuckThreshold)
             {
                 // initiate reverse then
-                _controller.isReversing = true;
-                _controller.reverseTimer = reverseDuration;
+                _carControlling.isReversing = true;
+                _carControlling.reverseTimer = reverseDuration;
                 stuckTimer = 0f;
             }
         }
@@ -269,14 +253,14 @@ public class AIP1TrafficCar : Agent
         var carTransform = gameObject.transform.Find("Colliders/ColliderBottom").transform;
         
         // Calculates the move
-        _controller.PDCalculateMove(carTransform);
+        _carControlling.PDCalculateMove(carTransform);
         
-        var finalSteering = _controller.steering;
-        var finalAccel = _controller.acceleration;
-        var finalBrake = _controller.footbrake;
-        var finalHandbrake = _controller.handbrake;
+        var finalSteering = _carControlling.steering;
+        var finalAccel = _carControlling.acceleration;
+        var finalBrake = _carControlling.footbrake;
+        var finalHandbrake = _carControlling.handbrake;
         
-        if (_controller.HasReachedGoal)
+        if (_carControlling.HasReachedGoal)
         {
             // Force a complete stop, ignoring everything else
             finalSteering = 0f;
@@ -285,22 +269,15 @@ public class AIP1TrafficCar : Agent
             finalHandbrake = 0f;
         }
         
-        if (!_controller.isReversing && !_controller.HasReachedGoal)
+        if (!_carControlling.isReversing && !_carControlling.HasReachedGoal)
         {
-            
-            /*Collider[] obstacles = Physics.OverlapSphere(transform.position, 20f, LayerMask.GetMask("Obstacle"));
-            MultiObstacleAvoidance avoidance = new MultiObstacleAvoidance(carTransform, maxAcceleration:_maxAcceleration);
-            (finalAccel, finalSteering, finalBrake) = avoidance.getAdjustedControls(myTransform: carTransform, currentVelocity:currentVelocity,
-                intendedSteer:finalSteering, intendedBrake:finalBrake, intendedAccel:finalAccel, otherCars:_mOtherCars,
-                staticObstacles:obstacles);
-
-            finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);*/
             
             var voStop = new VOStop(carTransform, _mOtherCars);
             (finalAccel, finalSteering, finalBrake) = voStop.GetAdjustedControls(currentVelocity, 
                 finalSteering, finalBrake, finalAccel);
             
-// --- NEW: SIDE-BY-SIDE SWERVE LOGIC ---
+            /*
+            // --- NEW: SIDE-BY-SIDE SWERVE LOGIC ---
             float swerveSteer = 0f;
             foreach (var otherCar in _mOtherCars)
             {
@@ -329,10 +306,11 @@ public class AIP1TrafficCar : Agent
                         swerveSteer -= direction * urgency * 1.5f; 
                     }
                 }
+                
             }
-
+            */
             // Apply the swerve on top of the pathfinding steering and clamp it to valid bounds
-            finalSteering += swerveSteer;
+            //finalSteering += swerveSteer;
             finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
             // ---------------------------------------
         }

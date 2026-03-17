@@ -5,7 +5,7 @@ using Quaternion = UnityEngine.Quaternion;
 using Vector3 = UnityEngine.Vector3;
 
 
-namespace Pathfinding
+namespace PathFinding
 {
     public class Astar
     {

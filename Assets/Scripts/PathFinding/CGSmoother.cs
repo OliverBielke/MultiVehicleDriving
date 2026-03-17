@@ -4,9 +4,9 @@ using UnityEngine;
 using Quaternion = UnityEngine.Quaternion;
 using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
-using Pathfollowing;
+using PathFollowing;
 
-namespace Pathfinding
+namespace PathFinding
 {
     public class CGSmoother
     {
@@ -168,7 +168,7 @@ namespace Pathfinding
             {
                 int spacing = 5; // Changed to 5 for faster runtime, original was 2
                 path = GetResampledPath(path, spacing);
-                targetSpeed = Controller.GenerateTargetSpeeds(path);
+                targetSpeed = CarControlling.GenerateTargetSpeeds(path);
                 path = RunGradientDescent(path, targetSpeed);
                 iter++;
             }

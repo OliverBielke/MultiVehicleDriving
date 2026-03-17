@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Pathfollowing
+namespace PathFollowing
 {
     
     /// <summary>
