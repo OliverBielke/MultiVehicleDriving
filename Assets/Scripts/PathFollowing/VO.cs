@@ -1,4 +1,6 @@
 using UnityEngine;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace PathFollowing
 {
@@ -9,10 +11,12 @@ namespace PathFollowing
         private readonly float _vehicleRadius;
         
         // --- 2. Safety Parameters ---
-        private const float TimeHorizon = 3.0f;           // How far ahead to predict (seconds)
+        private const float MaxSpeed = 5f;
+        private const float TimeHorizon = 10.0f;           // How far ahead to predict (seconds)
         private const float PedestrianRadius = 1.0f;      // Approximate size of a pedestrian
         private const int AccelSamples = 9;               // How many points to check on our acceleration grid
         private const float VehicleRadiusPadding =  0.5f;
+        private const float StaticObstacleRadiusPadding = 1.5f;
         
         public VO(Transform vehicleTransform, float maxAcceleration)
         {
@@ -25,7 +29,334 @@ namespace PathFollowing
             Collider[] staticObstacles
             )
         {
-            // 1. Visualize Agent's Current State & Intent
+            var currentVelocity2 = new Vector2(currentVelocity.x, currentVelocity.z);
+            
+            // Visualize Agent's Current State & Intent
+            VisualizeAgentAndObstacles(myTransform, currentVelocity2, intendedH, intendedV, pedestrians);
+            
+            // Clamp intent to the physical capabilities of this specific drone model
+            var intendedAccel2D = GetRealAcceleration(intendedH, intendedV);
+            
+            //Get candidate accelerations
+            var candidates = GetCandidateAccelerations(intendedAccel2D);
+            
+            // Sort the candidates
+            candidates =  SortCandidates(candidates, intendedAccel2D);
+            
+            //Get the obstacles
+            var obstacleList = new List<VehicleState>();
+
+            foreach (var drone in otherDrones)
+            {
+                obstacleList.Add(ConvertDroneToState(drone));
+            }
+
+            foreach (var pedestrian in pedestrians)
+            {
+                obstacleList.Add(ConvertPedestrianToState(pedestrian));
+            }
+
+            foreach (var obstacle in staticObstacles)
+            {
+                obstacleList.Add(ConvertStaticObstacleToState(obstacle, myTransform));
+            }
+            
+            var bestAccel = Vector2.zero;
+            var maxColTime = 0f;
+            
+            float h;
+            float v;
+            // Evaluate each candidate to find the best one
+            foreach (var candidate in candidates)
+            {
+                var newVel = currentVelocity2 + candidate * Time.fixedDeltaTime;
+                
+                var colTime = LowestTimeToCollision(newVel, new Vector2(myTransform.position.x, myTransform.position.z), obstacleList);
+                
+                if (colTime > TimeHorizon)
+                {
+                    (h, v) = GetAccelerationOutput(candidate);
+                    //Debug.Log($"Input accel: {intendedH:F2}, {intendedV:F2}; Output accel: {h:F2}, {v:F2}. Found perfectly safe acceleration with time to collision of {colTime:F2} seconds. Using this acceleration.");
+                    return (h, v);
+                }
+
+                if (colTime <= maxColTime)//If worse than best time
+                {
+                    continue;
+                }
+                
+                maxColTime = colTime;
+                bestAccel = candidate;
+            }
+            
+            // Visualize the finalized, chosen acceleration in magenta
+            Debug.DrawRay(myTransform.position + currentVelocity, new Vector3(bestAccel.x, 0, bestAccel.y), Color.magenta);
+            
+            (h, v) = GetAccelerationOutput(bestAccel);
+            Debug.Log($"Input accel: {intendedH:F2}, {intendedV:F2}; Output accel: {h:F2}, {v:F2}. No perfectly safe acceleration found. Best candidate has time to collision of {maxColTime:F2} seconds.");
+
+            return (h, v);
+        }
+
+
+        private VehicleState ConvertStaticObstacleToState(Collider obstacle, Transform myTransform)
+        {
+            var obsPos3D = obstacle.ClosestPoint(myTransform.position);
+            var obsPos = new Vector2(obsPos3D.x, obsPos3D.z);
+            
+            return new VehicleState
+            {
+                Position = obsPos,
+                Velocity = Vector2.zero, 
+                Forward = Vector2.zero, 
+                Radius = 0f + StaticObstacleRadiusPadding
+            };
+        }
+        
+        
+        private VehicleState ConvertDroneToState(GameObject drone)
+        {
+            var droneVel = drone.GetComponent<Rigidbody>().linearVelocity;
+                
+            var dronePos = new Vector2(drone.transform.position.x, drone.transform.position.z);
+            
+            return new VehicleState
+            {
+                Position = dronePos,
+                Velocity = new Vector2(droneVel.x, droneVel.z), 
+                Forward = new Vector2(droneVel.x, droneVel.z).normalized, 
+                Radius = _vehicleRadius
+            };
+        }
+        
+        
+        private VehicleState ConvertPedestrianToState(GameObject pedestrian)
+        {
+            var pedAI = pedestrian.GetComponent<ObstacleAI>();
+            var pedVel = new Vector2(pedAI.direction.x, pedAI.direction.z) * pedAI.speed;
+                
+            var pedPos = new Vector2(pedestrian.transform.position.x, pedestrian.transform.position.z);
+            
+            return new VehicleState
+            {
+                Position = pedPos,
+                Velocity = pedVel, 
+                Forward = new Vector2(pedAI.direction.x, pedAI.direction.z).normalized, 
+                Radius = PedestrianRadius
+            };
+        }
+        
+        
+        /// <summary>
+        /// Sort candidates based on how close they are to the intended acceleration. 
+        /// </summary>
+        /// <param name="candidates">The list to be sorted. </param>
+        /// <param name="intendedAccel2D">Intended acceleration. </param>
+        /// <returns>The sorted list. </returns>
+        private Vector2[] SortCandidates(Vector2[] candidates, Vector2 intendedAccel2D)
+        {
+            return candidates
+                .OrderBy(c => (c - intendedAccel2D).sqrMagnitude)
+                .ToArray();
+        }
+
+
+        /*private float TimeToDroneCollision(Transform myTransform, Vector2 currentVelocity, 
+            GameObject[] otherDrones)
+        {
+            var tMin = float.MaxValue;
+            
+            foreach (var drone in otherDrones)
+            {
+                Vector2 relativePosition;
+                Vector2 relativeVelocity;
+                (relativePosition, relativeVelocity) = GetPedestrianRelatives(pedestrian, myTransform, currentVelocity);
+                
+                var t = TimeToCollision(relativePosition, relativeVelocity, _vehicleRadius, PedestrianRadius);
+                
+                if (t > 0f) tMin = Mathf.Min(tMin, t);
+            }
+            
+            return tMin;
+        }*/
+        
+        
+        /*
+        /// <summary>
+        /// Return the time until collision with the nearest pedestrian, assuming we maintain the current velocity and candidate acceleration. If this time is less than our TimeHorizon, we consider this candidate unsafe.
+        /// </summary>
+        /// <param name="myTransform"></param>
+        /// <param name="currentVelocity"></param>
+        /// <param name="pedestrians"></param>
+        /// <returns></returns>
+        private float TimeToPedestrianCollision(Transform myTransform, Vector2 currentVelocity, 
+            GameObject[] pedestrians)
+        {
+            var tMin = float.MaxValue;
+            
+            foreach (var pedestrian in pedestrians)
+            {
+                Vector2 relativePosition;
+                Vector2 relativeVelocity;
+                (relativePosition, relativeVelocity) = GetPedestrianRelatives(pedestrian, myTransform, currentVelocity);
+                
+                var t = TimeToCollision(relativePosition, relativeVelocity, _vehicleRadius, PedestrianRadius);
+                
+                if (t > 0f) tMin = Mathf.Min(tMin, t);
+            }
+            
+            return tMin;
+        }*/
+
+
+        private float LowestTimeToCollision(Vector2 velocity, Vector2 position,
+            List<VehicleState> obstacles)
+        {
+            var t = float.MaxValue;
+            foreach (var obstacle in obstacles)
+            {
+                var tNew = TimeToCollision(velocity, position, obstacle);
+                if (tNew >= 0f)
+                {
+                    t = Mathf.Min(t, tNew);
+                }
+            }
+            
+            return t;
+        }
+        
+        
+        /// <summary>
+        /// Returns to collision with an object. Negative if no collision. 
+        /// </summary>
+        /// <param name="relativePosition">Relative position. </param>
+        /// <param name="relativeVelocity">Relative velocity. </param>
+        /// <param name="radiusVehicle">Radius of the vehicle. </param>
+        /// <param name="radiusObstacle">Radius of the obstacle. </param>
+        /// <returns>Time to collision, negative if no collision. </returns>
+        private float TimeToCollision(Vector2 velocity, Vector2 position, VehicleState obstacle)
+        {
+            var relativePosition = position - obstacle.Position;
+            var relativeVelocity = velocity - obstacle.Velocity;
+            
+            var combinedRadius = _vehicleRadius + obstacle.Radius;
+            
+            // Calculate Time to Collision (TTC)
+            // Starting from the equation ||V*t - P|| = R, we derive a quadratic formula to solve for t (time until collision).
+            // Quadratic equation: a*t^2 + b*t + c = 0
+            var a = relativeVelocity.sqrMagnitude;
+            var b = -2f * Vector2.Dot(relativeVelocity, relativePosition);
+            var c = relativePosition.sqrMagnitude - combinedRadius * combinedRadius;
+
+            // If a is near zero, relative velocity is zero (we are matching speeds perfectly)
+            if (a < 0.0001f) return -1f;
+
+            // Convert to p-q form: t^2 + (b/a)*t + (c/a) = 0
+            var p = b / a;
+            var q = c / a;
+
+            var inSqrt = (p * p / 4f) - q;
+
+            if (inSqrt < 0)
+            {
+                // No real roots means no collision
+                return -1f;
+            }
+
+            var sqrtTerm = Mathf.Sqrt(inSqrt);
+
+            // Get the collision times
+            var t1 = (-p / 2f) - sqrtTerm;
+            var t2 = (-p / 2f) + sqrtTerm;
+
+            // We want the smallest positive time
+            var t = -1f;
+            if (t1 >= 0 && (t2 < 0 || t1 < t2)) t = t1;
+            else if (t2 >= 0) t = t2;
+            
+            return t;
+        }
+        
+        
+        /// <summary>
+        /// Get the relative position and velocity of a pedestrian. 
+        /// </summary>
+        /// <param name="pedestrian">The pedestrian game object. </param>
+        /// <param name="myTransform">The vehicle transform. </param>
+        /// <param name="currentVelocity">Current velocity of the vehicle. </param>
+        /// <returns>The relative position and velocity. </returns>
+        private static (Vector2, Vector2) GetPedestrianRelatives(GameObject pedestrian, Transform myTransform, Vector2 currentVelocity)
+        {
+            var pedAI = pedestrian.GetComponent<ObstacleAI>();
+            var pedVel = new Vector2(pedAI.direction.x, pedAI.direction.z) * pedAI.speed;
+            var relativeVelocity = currentVelocity - pedVel;
+                
+            var pedPos = new Vector2(pedestrian.transform.position.x, pedestrian.transform.position.z);
+            var myPos = new Vector2(myTransform.position.x, myTransform.position.z);
+            var relativePosition = myPos - pedPos;
+            
+            return (relativePosition, relativeVelocity);
+        }
+        
+        
+        /// <summary>
+        /// Get the candidate accelerations to evaluate. Candidate 0 is always the exact intended acceleration, and the rest are distributed in a circle around it.
+        /// </summary>
+        /// <param name="intendedAccel2D">Intended acceleration. </param>
+        /// <returns>Candidate accelerations. </returns>
+        private Vector2[] GetCandidateAccelerations(Vector2 intendedAccel2D)
+        {
+            // Generate our candidate accelerations
+            var candidates = new Vector2[AccelSamples];
+            
+            // We ALWAYS include the exact intended acceleration as candidate 0
+            candidates[0] = intendedAccel2D;
+            
+            // Distribute the remaining samples in a circle around the drone
+            // (These are our escape options if the intended path is blocked)
+            for (var i = 1; i < AccelSamples; i++)
+            {
+                var angle = (i - 1) * (Mathf.PI * 2f) / (AccelSamples - 1);
+                candidates[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * _maxAcceleration;
+            }
+            
+            return candidates;
+        }
+        
+        
+        /// <summary>
+        /// Convert the accel input in the same way the Move function does, to ensure we're evaluating the same physical acceleration that the drone will actually experience.
+        /// </summary>
+        /// <param name="h">Horizontal acceleration. </param>
+        /// <param name="v">Vertical acceleration. </param>
+        /// <returns>The physical acceleration. </returns>
+        private Vector2 GetRealAcceleration(float h, float v)
+        {
+            var acceleration = (Vector3.right * h + Vector3.forward * v) * _maxAcceleration;
+            if (acceleration.magnitude > _maxAcceleration)
+            {
+                acceleration = acceleration.normalized * _maxAcceleration;
+            }
+            
+            return new Vector2(acceleration.x, acceleration.z);
+        }
+
+
+        /// <summary>
+        /// Convert the physical acceleration to the one used in Move. 
+        /// </summary>
+        /// <param name="outputAccel2D">Our best physical acceleration. </param>
+        /// <returns>The output h and v. </returns>
+        private (float, float) GetAccelerationOutput(Vector2 outputAccel2D)
+        {
+            var acceleration = outputAccel2D /  _maxAcceleration;
+            return (acceleration.x, acceleration.y);
+        }
+        
+        
+        private void VisualizeAgentAndObstacles(Transform myTransform, Vector3 currentVelocity, 
+            float intendedH, float intendedV, GameObject[] pedestrians)
+        {
             // Green line: Current Velocity
             Debug.DrawRay(myTransform.position, currentVelocity, Color.green);
             
@@ -45,34 +376,8 @@ namespace PathFollowing
                 }
             }
             
-            // Generate and Visualize the Search Space
-            // We will eventually test these points to see which are safe, 
-            // and pick the safe one closest to intendedAccelVector.
-            int gridSide = Mathf.CeilToInt(Mathf.Sqrt(AccelSamples));
-            float step = (_maxAcceleration * 2f) / Mathf.Max(1, gridSide - 1);
-
-            for (int i = 0; i < gridSide; i++)
-            {
-                for (int j = 0; j < gridSide; j++)
-                {
-                    float candH = -_maxAcceleration + (i * step);
-                    float candV = -_maxAcceleration + (j * step);
-                    
-                    Vector3 candAccel = new Vector3(candH, 0, candV);
-                    
-                    // Discard points outside our maximum acceleration capability (keep it circular)
-                    if (candAccel.magnitude > _maxAcceleration) continue;
-
-                    // Draw the candidate acceleration points in white at the tip of our velocity vector
-                    DrawDebugCross(myTransform.position + currentVelocity + candAccel, 0.15f, Color.white);
-                }
-            }
-
+            // Draw this vehicle radius
             DrawDebugCircle(myTransform.position, _vehicleRadius, Color.cyan); 
-            
-
-            // Still just returning the intended acceleration for now
-            return (intendedH, intendedV);
         }
         
         
@@ -92,13 +397,6 @@ namespace PathFollowing
                 Debug.DrawLine(prevPoint, nextPoint, color);
                 prevPoint = nextPoint;
             }
-        }
-        
-        // Helper method to draw a small cross for points in space
-        private void DrawDebugCross(Vector3 position, float size, Color color)
-        {
-            Debug.DrawLine(position - Vector3.right * size, position + Vector3.right * size, color);
-            Debug.DrawLine(position - Vector3.forward * size, position + Vector3.forward * size, color);
         }
     }
 }
