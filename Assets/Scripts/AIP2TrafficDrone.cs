@@ -6,6 +6,7 @@ using Scripts.Vehicle;
 using UnityEngine;
 using PathFinding;
 using PathFollowing;
+using UnityEngine.Serialization;
 using Debug = UnityEngine.Debug;
 
 [RequireComponent(typeof(DroneControlling))]
@@ -23,6 +24,8 @@ public class AIP2TrafficDrone : Agent
     public List<GameObject> targetObjects;
     public List<GameObject> teamVehicles;
 
+    public GameObject currentTargetObject;
+    
     private Transform _initialDroneState;
     private DroneControlling _droneControlling;
     private List<Node> _waypoints;
@@ -76,7 +79,7 @@ public class AIP2TrafficDrone : Agent
         _priorityCounter++;
         _maxAcceleration = 5f; 
         
-        _startupDelay = this.priority * StaggeredDelay;
+        _startupDelay = priority * StaggeredDelay;
         _startupTimer = 0f;
         
         var gameManagerA2 = FindFirstObjectByType<GameManagerA2>();
@@ -91,41 +94,11 @@ public class AIP2TrafficDrone : Agent
         // Fallback to standard transform if Colliders/ColliderBottom doesn't exist on the drone
         Transform colliderBottom = gameObject.transform.Find("Colliders/ColliderBottom");
         _initialDroneState = colliderBottom != null ? colliderBottom : gameObject.transform;
-        
+
         targetObjects = _mCurrentGoals.Select(goal => goal.GetTargetObject()).ToList();
+        
 
-        if (targetObjects.Count == 0) return;
-
-        Vector3 startPos = _initialDroneState.position;
-        //Vector3 goalPos = targetObjects[0].transform.position;
-        var goalChoose = new GoalChoosing(targetObjects, teamVehicles, _initialDroneState);
-        var goalPos = goalChoose.GetGoalPosition();
-        
-        Astar astar = new();
-        List<Vector3> astarPath = astar.PlanPathAStar(startPos, goalPos);
-        
-        if (astarPath.Count < 2)
-        {
-            Debug.LogError("A* failed - no path found for drone");
-            return;
-        }
-        
-        // Convert Vector3 path to Node list
-        List<Node> nodes = new();
-        foreach (Vector3 pos in astarPath)
-        {
-            nodes.Add(new Node(pos.x, pos.z));
-        }
-        
-        // Smoothes the waypoints
-        CGSmoother smoother = new CGSmoother(_initialDroneState.position.y, groundCollider);
-        nodes = smoother.GetSmoothedPath(nodes);
-
-        _waypoints = nodes;
-        _lastPosition = transform.position; 
-        
-        // Creates the PD Controller
-        _droneControlling = new DroneControlling(nodes, goalPos, _initialDroneState);
+        AssignNextGoal();
     }
 
 
@@ -140,11 +113,41 @@ public class AIP2TrafficDrone : Agent
         float finalH;
         float finalV;
         
-        if (_droneControlling.HasReachedGoal || _startupTimer < _startupDelay)
+        //Staggered start + if goals reached
+        if (_startupTimer < _startupDelay || (_droneControlling != null && _droneControlling.HasReachedGoal && targetObjects.Count == 0))
         {
             // Force a complete stop, ignoring everything else
             finalH = 0f;
             finalV = 0f;
+        }
+        //If reached goal and needs to go to the next
+        else if (_droneControlling != null && _droneControlling.HasReachedGoal && targetObjects.Count > 0)
+        {
+            // Goal reached, but we have more targets. Remove the completed one and reassign.
+            if (currentTargetObject != null)
+            {
+                // 1. Remove from MY list
+                targetObjects.Remove(currentTargetObject);
+        
+                // 2. Remove from ALL TEAMMATES' lists so they know it's done
+                foreach (GameObject teammate in teamVehicles)
+                {
+                    if (teammate == this.gameObject) continue;
+            
+                    AIP2TrafficDrone mateScript = teammate.GetComponent<AIP2TrafficDrone>();
+                    if (mateScript != null)
+                    {
+                        mateScript.targetObjects.Remove(currentTargetObject);
+                    }
+                }
+            }
+            AssignNextGoal();
+            
+            // Calculates the move
+            _droneControlling.PDCalculateMove(droneTransform:_initialDroneState, drone:mDrone);
+        
+            finalH = _droneControlling.h;
+            finalV = _droneControlling.v;
         }
         else
         {
@@ -166,5 +169,67 @@ public class AIP2TrafficDrone : Agent
         
         // Drones only take 2 variables: Steering (turn) and Acceleration (forward)
         mDrone.Move(finalH, finalV);
+    }
+    
+    
+    // ADDED: Extracted goal choosing and pathfinding into a reusable method
+    private void AssignNextGoal()
+    {
+        if (targetObjects == null || targetObjects.Count == 0) return;
+
+        // Find out which targets are already claimed by teammates
+        List<GameObject> claimedTargets = new();
+        foreach (var teammate in teamVehicles)
+        {
+            if (teammate == this.gameObject) continue; // Don't check ourselves
+        
+            var mateScript = teammate.GetComponent<AIP2TrafficDrone>();
+            if (mateScript != null && mateScript.currentTargetObject != null)
+            {
+                claimedTargets.Add(mateScript.currentTargetObject);
+            }
+        }
+
+        // Filter our list to only include UNCLAIMED targets
+        var availableTargets = targetObjects.Except(claimedTargets).ToList();
+    
+        // Fallback: If there are more drones than targets, availableTargets will be empty. 
+        // In that case, just use the full list so they don't get stuck doing nothing.
+        if (availableTargets.Count == 0)
+        {
+            availableTargets = targetObjects;
+        }
+        
+        var startPos = _initialDroneState.position;
+        var goalChoose = new GoalChoosing(availableTargets, teamVehicles, _initialDroneState);
+        var goalPos = goalChoose.GetGoalPosition();
+        
+        // Identify which object was chosen so we can remove it once we reach it
+        currentTargetObject = targetObjects.OrderBy(t => Vector3.Distance(t.transform.position, goalPos)).FirstOrDefault();
+        
+        Astar astar = new();
+        List<Vector3> astarPath = astar.PlanPathAStar(startPos, goalPos);
+        
+        if (astarPath.Count < 2)
+        {
+            Debug.LogError("A* failed - no path found for drone");
+            return;
+        }
+        
+        List<Node> nodes = new();
+        foreach (Vector3 pos in astarPath)
+        {
+            nodes.Add(new Node(pos.x, pos.z));
+        }
+        
+        GameObject groundPlane = GameObject.Find("GroundPlane");
+        Collider groundCollider = groundPlane.GetComponent<Collider>();
+        CGSmoother smoother = new CGSmoother(_initialDroneState.position.y, groundCollider);
+        nodes = smoother.GetSmoothedPath(nodes);
+
+        _waypoints = nodes;
+        
+        // Creates the new PD Controller for the new path
+        _droneControlling = new DroneControlling(nodes, goalPos, _initialDroneState);
     }
 }
