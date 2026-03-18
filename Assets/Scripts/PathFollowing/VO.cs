@@ -12,10 +12,13 @@ namespace PathFollowing
         
         // --- 2. Safety Parameters ---
         private const float TimeHorizon = 2.0f;           // How far ahead to predict (seconds)
-        private const float PedestrianRadius = 1.0f;      // Approximate size of a pedestrian
+        private const float PedestrianRadius = 2.0f;      // Approximate size of a pedestrian
         private const int AccelSamples = 100;               // How many points to check on our acceleration grid
         private const float VehicleRadiusPadding =  0.5f;
         private const float StaticObstacleRadiusPadding = 1.5f;
+        
+        // Add this line:
+        private const float PedestrianTurnAnticipationTime = 1.0f; // How many seconds before a turn to assume v=0
         
         public VO(Transform vehicleTransform, float maxAcceleration)
         {
@@ -74,8 +77,16 @@ namespace PathFollowing
                     // If perfectly safe, optionally draw line to the furthest tracked threat (if any exist)
                     if (obsIndex != -1)
                     {
-                        var threatPos = obstacleList[obsIndex].Position;
-                        Debug.DrawLine(myTransform.position, new Vector3(threatPos.x, myTransform.position.y, threatPos.y), Color.red);
+                        var threat = obstacleList[obsIndex];
+                        var threatPos3D = new Vector3(threat.Position.x, myTransform.position.y, threat.Position.y);
+                        
+                        Debug.DrawLine(myTransform.position, threatPos3D, Color.red);
+                        
+                        // Draw red circle if the threat is static (velocity near zero)
+                        if (threat.Velocity.sqrMagnitude < 0.0001f)
+                        {
+                            DrawDebugCircle(threatPos3D, threat.Radius, Color.red);
+                        }
                     }
                     (h, v) = GetAccelerationOutput(candidate);
                     //Debug.Log($"Input accel: {intendedH:F2}, {intendedV:F2}; Output accel: {h:F2}, {v:F2}. Found perfectly safe acceleration with time to collision of {colTime:F2} seconds. Using this acceleration.");
@@ -144,7 +155,14 @@ namespace PathFollowing
         {
             var pedAI = pedestrian.GetComponent<ObstacleAI>();
             var pedVel = new Vector2(pedAI.direction.x, pedAI.direction.z) * pedAI.speed;
-                
+            
+            // --- Anticipation Logic ---
+            // Use the helper method to check if we should freeze their velocity
+            if (IsPedestrianAnticipatingTurn(pedAI, pedestrian.transform.position))
+            {
+                pedVel = Vector2.zero; 
+            }
+            
             var pedPos = new Vector2(pedestrian.transform.position.x, pedestrian.transform.position.z);
             
             return new VehicleState
@@ -154,6 +172,24 @@ namespace PathFollowing
                 Forward = new Vector2(pedAI.direction.x, pedAI.direction.z).normalized, 
                 Radius = PedestrianRadius
             };
+        }
+        
+        
+        private bool IsPedestrianAnticipatingTurn(ObstacleAI pedAI, Vector3 position)
+        {
+            Vector3 p1 = position + pedAI.direction;
+    
+            if (Physics.SphereCast(p1, pedAI.characterRadius, pedAI.direction, out RaycastHit hit, 20f))
+            {
+                float distanceUntilTurn = hit.distance - 2f;
+        
+                // Return true if they are within the anticipation time window
+                if (distanceUntilTurn < (pedAI.speed * PedestrianTurnAnticipationTime))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
         
         
@@ -222,9 +258,16 @@ namespace PathFollowing
                     // Penalize moving deeper by returning 0 (immediate collision)
                     return 0f; 
                 }
-                // Moving apart! Treat this as a perfectly safe escape route.
-                // Returning float.MaxValue ensures the algorithm accepts this candidate.
-                return float.MaxValue; 
+                // Moving apart! Treat this as a perfectly an escape route.
+                // Calculate the time it will take to EXIT the circle (t2)
+                var pEsc = b / a;
+                var qEsc = c / a;
+                var tExit = (-pEsc / 2f) + Mathf.Sqrt((pEsc * pEsc / 4f) - qEsc);
+                
+                // Trick the evaluation loop: smaller exit time -> larger "safe" time score.
+                // We cap it just below TimeHorizon so it doesn't early-exit the candidate search,
+                // forcing the algorithm to evaluate all options and pick the FASTEST escape route.
+                return Mathf.Min(0.5f / tExit, TimeHorizon - 0.01f);
             }
             // --------------------------------------------------------
             
@@ -326,7 +369,14 @@ namespace PathFollowing
             // Visualize the obstacles in the scene.
             foreach (var ped in pedestrians)
             {
-                DrawDebugCircle(ped.transform.position, PedestrianRadius, Color.yellow);
+                var pedAI = ped.GetComponent<ObstacleAI>();
+        
+                // Check if the pedestrian is anticipating a turn
+                bool isTurning = IsPedestrianAnticipatingTurn(pedAI, ped.transform.position);
+        
+                // Choose red if turning, otherwise yellow
+                Color circleColor = isTurning ? Color.red : Color.yellow;
+                DrawDebugCircle(ped.transform.position, PedestrianRadius, circleColor);
                 
                 // If pedestrians have rigidbodies, draw their velocity in red
                 if (ped.TryGetComponent<Rigidbody>(out var rb))

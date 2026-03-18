@@ -116,8 +116,10 @@ public class AIP2TrafficDrone : Agent
         if (_startupTimer < _startupDelay || (_droneControlling != null && _droneControlling.HasReachedGoal && targetObjects.Count == 0))
         {
             // Force a complete stop, ignoring everything else
-            finalH = 0f;
-            finalV = 0f;
+            var accelToStop =  - currentVelocity.normalized * _maxAcceleration;
+            
+            finalH = accelToStop.x;
+            finalV = accelToStop.z;
         }
         //If reached goal and needs to go to the next
         else if (_droneControlling != null && _droneControlling.HasReachedGoal && targetObjects.Count > 0)
@@ -131,7 +133,7 @@ public class AIP2TrafficDrone : Agent
                 // 2. Remove from ALL TEAMMATES' lists so they know it's done
                 foreach (GameObject teammate in teamVehicles)
                 {
-                    if (teammate == this.gameObject) continue;
+                    if (teammate == gameObject) continue;
             
                     AIP2TrafficDrone mateScript = teammate.GetComponent<AIP2TrafficDrone>();
                     if (mateScript != null)
@@ -171,7 +173,7 @@ public class AIP2TrafficDrone : Agent
     }
     
     
-    // ADDED: Extracted goal choosing and pathfinding into a reusable method
+    // Extracted goal choosing and pathfinding into a reusable method
     private void AssignNextGoal()
     {
         if (targetObjects == null || targetObjects.Count == 0) return;
