@@ -12,10 +12,10 @@ namespace PathFollowing
         
         // --- 2. Safety Parameters ---
         private const float TimeHorizon = 2.0f;           // How far ahead to predict (seconds)
-        private const float PedestrianRadius = 2.0f;      // Approximate size of a pedestrian
+        private const float PedestrianRadius = 1.0f;      // Approximate size of a pedestrian
         private const int AccelSamples = 100;               // How many points to check on our acceleration grid
         private const float VehicleRadiusPadding =  0.5f;
-        private const float StaticObstacleRadiusPadding = 1.5f;
+        private const float StaticObstacleRadiusPadding = 0.5f;
         
         // Add this line:
         private const float PedestrianTurnAnticipationTime = 1.0f; // How many seconds before a turn to assume v=0
@@ -55,41 +55,110 @@ namespace PathFollowing
                 obstacleList.Add(ConvertDroneToState(drone));
             }
             foreach (var pedestrian in pedestrians) obstacleList.Add(ConvertPedestrianToState(pedestrian));
-            foreach (var obstacle in staticObstacles) obstacleList.Add(ConvertStaticObstacleToState(obstacle, myTransform));
+            
+            var wallPlanes = new List<(Vector2 Normal, float Distance, Vector2 ClosestPoint)>();
+            foreach (var obstacle in staticObstacles)
+            {
+                var closest3D = obstacle.ClosestPoint(myTransform.position);
+                var dir3D = myTransform.position - closest3D;
+                var dist3D = dir3D.magnitude;
+        
+                // If we are literally inside the wall, skip to avoid math errors (Unity will physically push us out anyway)
+                if (dist3D < 0.001f) continue; 
+        
+                // The normal points AWAY from the wall, towards the drone
+                var normal2D = new Vector2(dir3D.x, dir3D.z).normalized;
+        
+                // Calculate effective distance from the edge of the drone to the padded wall
+                var totalPadding = _vehicleRadius + StaticObstacleRadiusPadding;
+                var effDist = Mathf.Max(0f, dist3D - totalPadding);
+        
+                wallPlanes.Add((normal2D, effDist, new Vector2(closest3D.x, closest3D.z)));
+                
+                // --- NEW: Extended Wall Visualization ---
+                // 1. Find the 3D point where the padded wall boundary sits
+                var paddedWallPoint3D = closest3D + new Vector3(normal2D.x, 0, normal2D.y) * StaticObstacleRadiusPadding;
+                
+                // 2. Calculate the tangent (perpendicular to the normal) to draw the flat surface of the plane
+                var wallTangent = new Vector3(-normal2D.y, 0, normal2D.x);
+                
+                // 3. Draw an orange line representing the padded boundary (extends 2 units in both directions)
+                Debug.DrawLine(paddedWallPoint3D - wallTangent * 2f, paddedWallPoint3D + wallTangent * 2f, new Color(1f, 0.5f, 0f)); 
+                
+                // 4. (Optional) Draw a short grey ray showing the normal direction pointing away from the wall
+                Debug.DrawRay(paddedWallPoint3D, new Vector3(normal2D.x, 0, normal2D.y), Color.grey);
+                // ----------------------------------------
+            }
             
             var bestAccel = Vector2.zero;
             var maxColTime = 0f;
             
-            float h;
-            float v;
+            float h, v;
             
             var mostThreateningObstacleIndex = -1; // Track the threat for the chosen candidate
+            Vector2 mostThreateningWallPos = Vector2.zero;
             
             // Evaluate each candidate to find the best one
             foreach (var candidate in candidates)
             {
                 var newVel = currentVelocity2 + candidate * Time.fixedDeltaTime;
                 
+                // Evaluate VO
                 var (colTime, obsIndex) = LowestTimeToCollision(newVel, new Vector2(myTransform.position.x, myTransform.position.z), obstacleList);
+                Vector2 currentCandidateWallPos = Vector2.zero;
+                
+                // Evaluate Static Geometry (Unity Physics)
+                var newVel3D = new Vector3(newVel.x, 0, newVel.y);
+                if (newVel3D.sqrMagnitude > 0.0001f)
+                {
+                    // Evaluate Static Geometry (Planes)
+                    foreach (var plane in wallPlanes)
+                    {
+                        // Calculate how fast this velocity is moving directly INTO the wall plane
+                        // (plane.Normal points towards the drone, so -plane.Normal points into the wall)
+                        var velTowardsWall = Vector2.Dot(newVel, -plane.Normal);
+            
+                        // Only care if we are actually moving towards the wall
+                        if (velTowardsWall > 0.0001f)
+                        {
+                            float wallColTime;
+        
+                            if (plane.Distance <= 0.001f)
+                            {
+                                // We've breached the padding! Instead of colTime = 0 (which causes the 
+                                // drone to give up and coast), we map the impact severity to a tiny positive time.
+                                // Smaller velocity into the wall = larger fake time = better candidate score.
+                                // This forces the algorithm to pick the candidate that brakes the hardest.
+                                wallColTime = 0.001f / velTowardsWall;
+                            }
+                            else
+                            {
+                                wallColTime = plane.Distance / velTowardsWall;
+                            }
+                
+                            // If hitting the wall happens sooner than hitting a dynamic obstacle
+                            if (colTime > TimeHorizon || wallColTime < colTime)
+                            {
+                                colTime = wallColTime;
+                                obsIndex = -2; // Special index to denote a static wall threat
+                                currentCandidateWallPos = plane.ClosestPoint;
+                            }
+                        }
+                    }
+                }
                 
                 if (colTime > TimeHorizon)
                 {
                     // If perfectly safe, optionally draw line to the furthest tracked threat (if any exist)
-                    if (obsIndex != -1)
+                    if (obsIndex != -1 && obsIndex != -2)
                     {
                         var threat = obstacleList[obsIndex];
                         var threatPos3D = new Vector3(threat.Position.x, myTransform.position.y, threat.Position.y);
                         
                         Debug.DrawLine(myTransform.position, threatPos3D, Color.red);
-                        
-                        // Draw red circle if the threat is static (velocity near zero)
-                        if (threat.Velocity.sqrMagnitude < 0.0001f)
-                        {
-                            DrawDebugCircle(threatPos3D, threat.Radius, Color.red);
-                        }
                     }
                     (h, v) = GetAccelerationOutput(candidate);
-                    //Debug.Log($"Input accel: {intendedH:F2}, {intendedV:F2}; Output accel: {h:F2}, {v:F2}. Found perfectly safe acceleration with time to collision of {colTime:F2} seconds. Using this acceleration.");
+
                     return (h, v);
                 }
 
@@ -101,21 +170,37 @@ namespace PathFollowing
                 maxColTime = colTime;
                 bestAccel = candidate;
                 mostThreateningObstacleIndex = obsIndex;
+                
+                if (obsIndex == -2) 
+                {
+                    mostThreateningWallPos = currentCandidateWallPos; 
+                }
             }
             
             // Draw the debug line for the best fallback candidate we are forced to use
             if (mostThreateningObstacleIndex != -1)
             {
-                var threatPos = obstacleList[mostThreateningObstacleIndex].Position;
-                Debug.DrawLine(myTransform.position, new Vector3(threatPos.x, myTransform.position.y, threatPos.y), Color.red);
+                if (mostThreateningObstacleIndex == -2)
+                {
+                    // Safe drawing for static walls
+                    Debug.DrawLine(myTransform.position,
+                        new Vector3(mostThreateningWallPos.x, myTransform.position.y, mostThreateningWallPos.y),
+                        Color.red);
+                }
+                else
+                {
+                    // Safe drawing for dynamic agents
+                    var threatPos = obstacleList[mostThreateningObstacleIndex].Position;
+                    Debug.DrawLine(myTransform.position, new Vector3(threatPos.x, myTransform.position.y, threatPos.y),
+                        Color.red);
+                }
             }
-            
+
             // Visualize the finalized, chosen acceleration in magenta
             Debug.DrawRay(myTransform.position + currentVelocity, new Vector3(bestAccel.x, 0, bestAccel.y), Color.magenta);
             
             (h, v) = GetAccelerationOutput(bestAccel);
-            Debug.Log($"Input accel: {intendedH:F2}, {intendedV:F2}; Output accel: {h:F2}, {v:F2}. No perfectly safe acceleration found. Best candidate has time to collision of {maxColTime:F2} seconds.");
-
+            
             return (h, v);
         }
 
@@ -255,8 +340,9 @@ namespace PathFollowing
                 // If b > 0, they are moving apart.
                 if (b <= 0f) 
                 {
-                    // Penalize moving deeper by returning 0 (immediate collision)
-                    return 0f; 
+                    // Penalize moving deeper, but break ties by rewarding the strongest braking!
+                    // b represents how fast they are moving together. -b makes it positive.
+                    return 0.001f / Mathf.Max(0.0001f, -b);
                 }
                 // Moving apart! Treat this as a perfectly an escape route.
                 // Calculate the time it will take to EXIT the circle (t2)
