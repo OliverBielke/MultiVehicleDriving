@@ -16,6 +16,9 @@ namespace PathFollowing
         private float MAX_DRONE_ACCEL = 15f;
         private float MAX_DRONE_SPEED = 5f;
         
+        public bool HasReachedGoal = false;
+        public float StoppingDistance = 3f; // Adjust based on the size of your car/goal
+        
         // Outputs
         public float h { get; set; }  // Horizontal acceleration command [-1, 1]
         public float v { get; set; }  // Forward acceleration command [-1, 1]
@@ -53,6 +56,8 @@ namespace PathFollowing
         public void PDCalculateMove(Transform droneTransform, DroneController drone)
         {
             currDroneState = droneTransform;
+            
+            if (CheckGoalReached()) return;
             
             MAX_DRONE_ACCEL = drone.max_acceleration;
             MAX_DRONE_SPEED = drone.max_speed;
@@ -280,5 +285,24 @@ namespace PathFollowing
             return start + (segmentDirection * cappedMagnitude);
         }
 
+        
+        private bool CheckGoalReached()
+        {
+            // Check distance on the X/Z plane to ignore elevation differences
+            Vector2 currentPos2D = new Vector2(currDroneState.position.x, currDroneState.position.z);
+            Vector2 goal2D = new Vector2(goal.x, goal.z);
+
+            if (Vector2.Distance(currentPos2D, goal2D) <= StoppingDistance)
+            {
+                Debug.Log("Goal reached!");
+                HasReachedGoal = true;
+                h = 0f;
+                v = 0f;
+                return true;
+            }
+    
+            return false;
+        }
+        
     }
 }

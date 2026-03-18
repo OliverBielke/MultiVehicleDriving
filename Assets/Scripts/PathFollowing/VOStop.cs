@@ -260,10 +260,10 @@ namespace PathFollowing
                 }
 
                 // Calculate Time to Collision (TTC)
-                // Starting from the equation ||V*t - P|| = R, we derive a quadratic formula to solve for t (time until collision).
+                // Starting from the equation ||V*t + P|| = R, we derive a quadratic formula to solve for t (time until collision).
                 // Quadratic equation: a*t^2 + b*t + c = 0
                 var a = relativeVelocity.sqrMagnitude;
-                var b = -2f * Vector2.Dot(relativeVelocity, relativePosition);
+                var b = 2f * Vector2.Dot(relativeVelocity, relativePosition);
                 var c = relativePosition.sqrMagnitude - combinedRadius * combinedRadius;
 
                 // If a is near zero, relative velocity is zero (we are matching speeds perfectly)

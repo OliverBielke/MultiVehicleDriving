@@ -13,19 +13,13 @@ public class AIP2TrafficDrone : Agent
 {
     public DroneController mDrone; // the drone controller we want to use. Assigned in prefab
 
-    public int priority = 0;
-    private static int priorityCounter = 0;
+    public int priority;
+    private static int _priorityCounter;
     private float _maxAcceleration;
     
     private GameObject[] _mOtherVehicles;
     private List<MultiVehicleGoal> _mCurrentGoals;
 
-    public bool drawTargets;
-    public bool drawAllVehicles;
-    public bool drawTeamVehicles;
-
-    public float steering;
-    public float acceleration;
     public List<GameObject> targetObjects;
     public List<GameObject> teamVehicles;
 
@@ -42,7 +36,7 @@ public class AIP2TrafficDrone : Agent
     
     // Staggered start
     private float _startupDelay;
-    private float _startupTimer = 0f;
+    private float _startupTimer;
     private const float StaggeredDelay = 5f;
     
     
@@ -78,8 +72,8 @@ public class AIP2TrafficDrone : Agent
     
     public override void Initialize()
     {
-        this.priority = priorityCounter;
-        priorityCounter++;
+        priority = _priorityCounter;
+        _priorityCounter++;
         _maxAcceleration = 5f; 
         
         _startupDelay = this.priority * StaggeredDelay;
@@ -103,7 +97,9 @@ public class AIP2TrafficDrone : Agent
         if (targetObjects.Count == 0) return;
 
         Vector3 startPos = _initialDroneState.position;
-        Vector3 goalPos = targetObjects[0].transform.position;
+        //Vector3 goalPos = targetObjects[0].transform.position;
+        var goalChoose = new GoalChoosing(targetObjects, teamVehicles, _initialDroneState);
+        var goalPos = goalChoose.GetGoalPosition();
         
         Astar astar = new();
         List<Vector3> astarPath = astar.PlanPathAStar(startPos, goalPos);
@@ -136,32 +132,29 @@ public class AIP2TrafficDrone : Agent
     public override void Step()
     {
         _startupTimer += Time.fixedDeltaTime;
-        if (_startupTimer < _startupDelay)
-        {
-            // Keep the drone completely stationary
-            mDrone.Move(0f, 0f);
-            _lastPosition = transform.position; 
-            return;
-        }
+        
         
         Vector3 currentVelocity = (transform.position - _lastPosition) / Time.fixedDeltaTime;
         _lastPosition = transform.position;
+
+        float finalH;
+        float finalV;
         
+        if (_droneControlling.HasReachedGoal || _startupTimer < _startupDelay)
+        {
+            // Force a complete stop, ignoring everything else
+            finalH = 0f;
+            finalV = 0f;
+        }
+        else
+        {
+            // Calculates the move
+            _droneControlling.PDCalculateMove(droneTransform:_initialDroneState, drone:mDrone);
         
-        // Calculates the move
-        _droneControlling.PDCalculateMove(droneTransform:_initialDroneState, drone:mDrone);
+            finalH = _droneControlling.h;
+            finalV = _droneControlling.v;
+        }
         
-        var finalH = _droneControlling.h;
-        var finalV = _droneControlling.v;
-        
-        
-        //var voStop = new VOStop(_initialDroneState, _mOtherVehicles);
-            
-        // Re-adjust controls to avoid collisions
-        //(finalH, finalV) = voStop.GetAdjustedDroneControls(currentVelocity:currentVelocity, 
-        //    intendedH:finalH, intendedV:finalV, drone:mDrone);
-        
-        //var multiObstacleAvoidance = new MultiObstacleAvoidance(_initialDroneState, mDrone.max_acceleration);
         
         var vo = new VO(vehicleTransform:_initialDroneState, mDrone.max_acceleration);
         
