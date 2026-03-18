@@ -11,10 +11,9 @@ namespace PathFollowing
         private readonly float _vehicleRadius;
         
         // --- 2. Safety Parameters ---
-        private const float MaxSpeed = 5f;
-        private const float TimeHorizon = 10.0f;           // How far ahead to predict (seconds)
+        private const float TimeHorizon = 2.0f;           // How far ahead to predict (seconds)
         private const float PedestrianRadius = 1.0f;      // Approximate size of a pedestrian
-        private const int AccelSamples = 9;               // How many points to check on our acceleration grid
+        private const int AccelSamples = 100;               // How many points to check on our acceleration grid
         private const float VehicleRadiusPadding =  0.5f;
         private const float StaticObstacleRadiusPadding = 1.5f;
         
@@ -48,33 +47,36 @@ namespace PathFollowing
 
             foreach (var drone in otherDrones)
             {
+                // Safety check: Skip ourselves if we accidentally ended up in the _otherDrone array!
+                if (drone.transform == myTransform) continue;
                 obstacleList.Add(ConvertDroneToState(drone));
             }
-
-            foreach (var pedestrian in pedestrians)
-            {
-                obstacleList.Add(ConvertPedestrianToState(pedestrian));
-            }
-
-            foreach (var obstacle in staticObstacles)
-            {
-                obstacleList.Add(ConvertStaticObstacleToState(obstacle, myTransform));
-            }
+            foreach (var pedestrian in pedestrians) obstacleList.Add(ConvertPedestrianToState(pedestrian));
+            foreach (var obstacle in staticObstacles) obstacleList.Add(ConvertStaticObstacleToState(obstacle, myTransform));
             
             var bestAccel = Vector2.zero;
             var maxColTime = 0f;
             
             float h;
             float v;
+            
+            var mostThreateningObstacleIndex = -1; // Track the threat for the chosen candidate
+            
             // Evaluate each candidate to find the best one
             foreach (var candidate in candidates)
             {
                 var newVel = currentVelocity2 + candidate * Time.fixedDeltaTime;
                 
-                var colTime = LowestTimeToCollision(newVel, new Vector2(myTransform.position.x, myTransform.position.z), obstacleList);
+                var (colTime, obsIndex) = LowestTimeToCollision(newVel, new Vector2(myTransform.position.x, myTransform.position.z), obstacleList);
                 
                 if (colTime > TimeHorizon)
                 {
+                    // If perfectly safe, optionally draw line to the furthest tracked threat (if any exist)
+                    if (obsIndex != -1)
+                    {
+                        var threatPos = obstacleList[obsIndex].Position;
+                        Debug.DrawLine(myTransform.position, new Vector3(threatPos.x, myTransform.position.y, threatPos.y), Color.red);
+                    }
                     (h, v) = GetAccelerationOutput(candidate);
                     //Debug.Log($"Input accel: {intendedH:F2}, {intendedV:F2}; Output accel: {h:F2}, {v:F2}. Found perfectly safe acceleration with time to collision of {colTime:F2} seconds. Using this acceleration.");
                     return (h, v);
@@ -87,6 +89,14 @@ namespace PathFollowing
                 
                 maxColTime = colTime;
                 bestAccel = candidate;
+                mostThreateningObstacleIndex = obsIndex;
+            }
+            
+            // Draw the debug line for the best fallback candidate we are forced to use
+            if (mostThreateningObstacleIndex != -1)
+            {
+                var threatPos = obstacleList[mostThreateningObstacleIndex].Position;
+                Debug.DrawLine(myTransform.position, new Vector3(threatPos.x, myTransform.position.y, threatPos.y), Color.red);
             }
             
             // Visualize the finalized, chosen acceleration in magenta
@@ -159,80 +169,33 @@ namespace PathFollowing
                 .OrderBy(c => (c - intendedAccel2D).sqrMagnitude)
                 .ToArray();
         }
-
-
-        /*private float TimeToDroneCollision(Transform myTransform, Vector2 currentVelocity, 
-            GameObject[] otherDrones)
-        {
-            var tMin = float.MaxValue;
-            
-            foreach (var drone in otherDrones)
-            {
-                Vector2 relativePosition;
-                Vector2 relativeVelocity;
-                (relativePosition, relativeVelocity) = GetPedestrianRelatives(pedestrian, myTransform, currentVelocity);
-                
-                var t = TimeToCollision(relativePosition, relativeVelocity, _vehicleRadius, PedestrianRadius);
-                
-                if (t > 0f) tMin = Mathf.Min(tMin, t);
-            }
-            
-            return tMin;
-        }*/
         
-        
-        /*
-        /// <summary>
-        /// Return the time until collision with the nearest pedestrian, assuming we maintain the current velocity and candidate acceleration. If this time is less than our TimeHorizon, we consider this candidate unsafe.
-        /// </summary>
-        /// <param name="myTransform"></param>
-        /// <param name="currentVelocity"></param>
-        /// <param name="pedestrians"></param>
-        /// <returns></returns>
-        private float TimeToPedestrianCollision(Transform myTransform, Vector2 currentVelocity, 
-            GameObject[] pedestrians)
-        {
-            var tMin = float.MaxValue;
-            
-            foreach (var pedestrian in pedestrians)
-            {
-                Vector2 relativePosition;
-                Vector2 relativeVelocity;
-                (relativePosition, relativeVelocity) = GetPedestrianRelatives(pedestrian, myTransform, currentVelocity);
-                
-                var t = TimeToCollision(relativePosition, relativeVelocity, _vehicleRadius, PedestrianRadius);
-                
-                if (t > 0f) tMin = Mathf.Min(tMin, t);
-            }
-            
-            return tMin;
-        }*/
 
-
-        private float LowestTimeToCollision(Vector2 velocity, Vector2 position,
+        private (float, int) LowestTimeToCollision(Vector2 velocity, Vector2 position,
             List<VehicleState> obstacles)
         {
+            int closestObstacleIndex = -1; // -1 means no collision found
             var t = float.MaxValue;
-            foreach (var obstacle in obstacles)
+            for (int i = 0; i < obstacles.Count; i++)
             {
-                var tNew = TimeToCollision(velocity, position, obstacle);
-                if (tNew >= 0f)
+                var tNew = TimeToCollision(velocity, position, obstacles[i]);
+                if (tNew >= 0f && tNew < t)
                 {
-                    t = Mathf.Min(t, tNew);
+                    t = tNew;
+                    closestObstacleIndex = i;
                 }
             }
             
-            return t;
+            return (t,  closestObstacleIndex);
         }
         
         
         /// <summary>
         /// Returns to collision with an object. Negative if no collision. 
         /// </summary>
-        /// <param name="relativePosition">Relative position. </param>
-        /// <param name="relativeVelocity">Relative velocity. </param>
-        /// <param name="radiusVehicle">Radius of the vehicle. </param>
-        /// <param name="radiusObstacle">Radius of the obstacle. </param>
+        /// <param name="velocity">Velocity of the drone. </param>
+        /// <param name="position">Position of the drone. </param>
+        /// <param name="obstacle">Obstacle we want to avoid. </param>
         /// <returns>Time to collision, negative if no collision. </returns>
         private float TimeToCollision(Vector2 velocity, Vector2 position, VehicleState obstacle)
         {
@@ -242,12 +205,29 @@ namespace PathFollowing
             var combinedRadius = _vehicleRadius + obstacle.Radius;
             
             // Calculate Time to Collision (TTC)
-            // Starting from the equation ||V*t - P|| = R, we derive a quadratic formula to solve for t (time until collision).
+            // Starting from the equation ||V*t + P|| = R, we derive a quadratic formula to solve for t (time until collision).
             // Quadratic equation: a*t^2 + b*t + c = 0
             var a = relativeVelocity.sqrMagnitude;
-            var b = -2f * Vector2.Dot(relativeVelocity, relativePosition);
+            var b = 2f * Vector2.Dot(relativeVelocity, relativePosition);
             var c = relativePosition.sqrMagnitude - combinedRadius * combinedRadius;
 
+            // --- Handle agents that are already intersecting ---
+            if (c < 0f)
+            {
+                // b represents the direction of relative velocity compared to relative position.
+                // If b <= 0, the agents are moving towards each other (or perfectly parallel).
+                // If b > 0, they are moving apart.
+                if (b <= 0f) 
+                {
+                    // Penalize moving deeper by returning 0 (immediate collision)
+                    return 0f; 
+                }
+                // Moving apart! Treat this as a perfectly safe escape route.
+                // Returning float.MaxValue ensures the algorithm accepts this candidate.
+                return float.MaxValue; 
+            }
+            // --------------------------------------------------------
+            
             // If a is near zero, relative velocity is zero (we are matching speeds perfectly)
             if (a < 0.0001f) return -1f;
 
@@ -275,27 +255,6 @@ namespace PathFollowing
             else if (t2 >= 0) t = t2;
             
             return t;
-        }
-        
-        
-        /// <summary>
-        /// Get the relative position and velocity of a pedestrian. 
-        /// </summary>
-        /// <param name="pedestrian">The pedestrian game object. </param>
-        /// <param name="myTransform">The vehicle transform. </param>
-        /// <param name="currentVelocity">Current velocity of the vehicle. </param>
-        /// <returns>The relative position and velocity. </returns>
-        private static (Vector2, Vector2) GetPedestrianRelatives(GameObject pedestrian, Transform myTransform, Vector2 currentVelocity)
-        {
-            var pedAI = pedestrian.GetComponent<ObstacleAI>();
-            var pedVel = new Vector2(pedAI.direction.x, pedAI.direction.z) * pedAI.speed;
-            var relativeVelocity = currentVelocity - pedVel;
-                
-            var pedPos = new Vector2(pedestrian.transform.position.x, pedestrian.transform.position.z);
-            var myPos = new Vector2(myTransform.position.x, myTransform.position.z);
-            var relativePosition = myPos - pedPos;
-            
-            return (relativePosition, relativeVelocity);
         }
         
         

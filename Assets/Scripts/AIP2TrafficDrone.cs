@@ -43,6 +43,7 @@ public class AIP2TrafficDrone : Agent
     // Staggered start
     private float _startupDelay;
     private float _startupTimer = 0f;
+    private const float StaggeredDelay = 5f;
     
     
     private void OnDrawGizmos()
@@ -81,7 +82,7 @@ public class AIP2TrafficDrone : Agent
         priorityCounter++;
         _maxAcceleration = 5f; 
         
-        _startupDelay = this.priority * 1.5f;
+        _startupDelay = this.priority * StaggeredDelay;
         _startupTimer = 0f;
         
         var gameManagerA2 = FindFirstObjectByType<GameManagerA2>();
