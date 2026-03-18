@@ -6,7 +6,6 @@ using Scripts.Vehicle;
 using UnityEngine;
 using PathFinding;
 using PathFollowing;
-using UnityEngine.Serialization;
 using Debug = UnityEngine.Debug;
 
 [RequireComponent(typeof(DroneControlling))]
