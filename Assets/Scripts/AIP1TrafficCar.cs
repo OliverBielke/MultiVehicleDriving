@@ -34,7 +34,7 @@ public class AIP1TrafficCar : Agent
 
     private Transform _initialCarState;
     private CarControlling _carControlling;
-    private List<Node> _waypoints;
+    public List<Node> Waypoints { get; private set; }
     
     // For reversal:
     private float stuckTimer = 0f;
@@ -50,18 +50,18 @@ public class AIP1TrafficCar : Agent
     
     private void OnDrawGizmos()
     {
-        if (_waypoints != null && _waypoints.Count > 0)
+        if (Waypoints != null && Waypoints.Count > 0)
         {
             Gizmos.color = Color.green;
-            for (int i = 0; i < _waypoints.Count - 1; i++)
+            for (int i = 0; i < Waypoints.Count - 1; i++)
             {
-                Vector3 start = new Vector3(_waypoints[i].position.x, 1f, _waypoints[i].position.y);
-                Vector3 end = new Vector3(_waypoints[i + 1].position.x, 1f, _waypoints[i + 1].position.y);
+                Vector3 start = new Vector3(Waypoints[i].position.x, 1f, Waypoints[i].position.y);
+                Vector3 end = new Vector3(Waypoints[i + 1].position.x, 1f, Waypoints[i + 1].position.y);
                 Gizmos.DrawLine(start, end);
                 Gizmos.DrawSphere(start, 0.5f);
             }
             // Draw last waypoint
-            Vector3 lastPos = new Vector3(_waypoints[_waypoints.Count - 1].position.x, 1f, _waypoints[_waypoints.Count - 1].position.y);
+            Vector3 lastPos = new Vector3(Waypoints[Waypoints.Count - 1].position.x, 1f, Waypoints[Waypoints.Count - 1].position.y);
             Gizmos.DrawSphere(lastPos, 0.5f);
         }
 
@@ -170,7 +170,7 @@ public class AIP1TrafficCar : Agent
     
                 foreach (GameObject teammate in teamVehicles)
                 {
-                    if (teammate == this.gameObject) continue;
+                    if (teammate == gameObject) continue;
         
                     AIP1TrafficCar mateScript = teammate.GetComponent<AIP1TrafficCar>();
                     if (mateScript != null)
@@ -188,16 +188,21 @@ public class AIP1TrafficCar : Agent
             finalBrake = _carControlling.footbrake;
             finalHandbrake = _carControlling.handbrake;
         }
-        if (!_carControlling.isReversing && !_carControlling.HasReachedGoal)
+        /*if (!_carControlling.isReversing && !_carControlling.HasReachedGoal)
         {
-            
-            var voStop = new VOStop(carTransform, _mOtherCars);
-            (finalAccel, finalSteering, finalBrake) = voStop.GetAdjustedControls(currentVelocity, 
-                finalSteering, finalBrake, finalAccel);
-            
+            // Pass the ego car (this) so PathStop can read the Waypoints
+            var pathStop = new PathStop(carTransform, this, _mOtherCars);
+    
+            (finalAccel, finalSteering, finalBrake) = pathStop.GetAdjustedControls(
+                currentVelocity, 
+                finalSteering, 
+                finalBrake, 
+                finalAccel
+            );
+    
             finalSteering = Mathf.Clamp(finalSteering, -1f, 1f);
             
-        }
+        }*/
         
         car.Move(finalSteering, finalAccel, finalBrake, finalHandbrake);
     }
@@ -281,7 +286,7 @@ public class AIP1TrafficCar : Agent
         CGSmoother smoother = new CGSmoother(_initialCarState.position.y, groundCollider);
         nodes = smoother.GetSmoothedPath(nodes);
 
-        _waypoints = nodes;
+        Waypoints = nodes;
     
         // Creates the new PD Controller for the new path
         _carControlling = new CarControlling(nodes, goalPos, _initialCarState);
