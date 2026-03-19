@@ -14,7 +14,7 @@ namespace PathFollowing
         private const float K_P_VELOCITY = 10f;
         private const float K_D_VELOCITY = 0f;
         private float MAX_DRONE_ACCEL = 15f;
-        private float MAX_DRONE_SPEED = 5f;
+        private float MAX_DRONE_SPEED = 15f;
         
         public bool HasReachedGoal = false;
         public float StoppingDistance = 3f; // Adjust based on the size of your car/goal
