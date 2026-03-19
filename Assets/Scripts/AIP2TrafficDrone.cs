@@ -39,7 +39,7 @@ public class AIP2TrafficDrone : Agent
     // Staggered start
     private float _startupDelay;
     private float _startupTimer;
-    private const float StaggeredDelay = 5f;
+    private const float StaggeredDelay = 0f;
     
     
     private void OnDrawGizmos()
