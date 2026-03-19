@@ -109,6 +109,8 @@ public class AIP2TrafficDrone : Agent
         Vector3 currentVelocity = (transform.position - _lastPosition) / Time.fixedDeltaTime;
         _lastPosition = transform.position;
 
+        PossibleNewGoal();
+        
         float finalH;
         float finalV;
         
@@ -182,7 +184,7 @@ public class AIP2TrafficDrone : Agent
         List<GameObject> claimedTargets = new();
         foreach (var teammate in teamVehicles)
         {
-            if (teammate == this.gameObject) continue; // Don't check ourselves
+            if (teammate == gameObject) continue; // Don't check ourselves
         
             var mateScript = teammate.GetComponent<AIP2TrafficDrone>();
             if (mateScript != null && mateScript.currentTargetObject != null)
@@ -232,5 +234,15 @@ public class AIP2TrafficDrone : Agent
         
         // Creates the new PD Controller for the new path
         _droneControlling = new DroneControlling(nodes, goalPos, _initialDroneState);
+    }
+
+
+    private void PossibleNewGoal()
+    {
+        // Check if the goal was already reached and removed from the list by a teammate
+        if (currentTargetObject != null && !targetObjects.Contains(currentTargetObject))
+        {
+            AssignNextGoal();
+        }
     }
 }
