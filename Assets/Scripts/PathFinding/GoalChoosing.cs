@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using PathFollowing;
 
 
-namespace PathFinding
+namespace PacMan.Agent.PathFinding
 {
     public class GoalChoosing
     {

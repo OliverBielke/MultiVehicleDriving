@@ -5,7 +5,7 @@ using Quaternion = UnityEngine.Quaternion;
 using Vector3 = UnityEngine.Vector3;
 
 
-namespace PathFinding
+namespace PacMan.Agent.PathFinding
 {
     public class Astar
     {

@@ -6,7 +6,7 @@ using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
 using PathFollowing;
 
-namespace PathFinding
+namespace PacMan.Agent.PathFinding
 {
     public class CGSmoother
     {
